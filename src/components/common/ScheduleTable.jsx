@@ -5,7 +5,7 @@ import { format, getWeek, isWithinInterval, addDays } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { colors } from './StyledComponents';
 
-// Стилизованные компоненты остаются такими же, как в предыдущей версии...
+// Стилизованные компоненты
 const ScheduleContainer = styled.div`
   width: 100%;
   overflow-x: auto;
@@ -37,6 +37,7 @@ const ScheduleGrid = styled.div`
   overflow: hidden;
   min-width: 890px;
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.05);
+  grid-auto-rows: minmax(min-content, auto);
   
   @media (max-width: 768px) {
     grid-template-columns: 40px repeat(6, minmax(125px, 1fr));
@@ -96,7 +97,8 @@ const ScheduleTimeCell = styled.div`
   display: flex;
   flex-direction: column;
   justify-content: center;
-  height: 95px;
+  min-height: 95px;
+  align-self: stretch;
   
   strong {
     font-size: 13px;
@@ -120,33 +122,62 @@ const ScheduleTimeCell = styled.div`
 
 const ScheduleCellWrapper = styled.div`
   position: relative;
-  height: 95px;
+  min-height: 95px;
   background-color: ${colors.white};
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  overflow-y: auto;
+  
+  &::-webkit-scrollbar {
+    width: 3px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background-color: #C7C7CC;
+    border-radius: 3px;
+  }
 `;
 
 const ScheduleCell = styled.div`
   background-color: ${props => props.empty ? colors.white : props.color || '#E1F5FE'};
   padding: 8px 10px;
   font-size: 11px;
-  border-radius: ${props => props.empty ? '0' : '10px'};
-  margin: 3px;
-  height: calc(100% - 6px);
+  border-radius: ${props => props.empty ? '0' : '12px'};
+  min-height: ${props => props.empty ? '100%' : '40px'};
+  flex: ${props => props.empty ? '1' : props.flex || '0 0 auto'};
+  margin-bottom: ${props => props.empty ? '0' : '3px'};
   overflow: hidden;
   display: flex;
   flex-direction: column;
   position: relative;
-  box-shadow: ${props => props.empty ? 'none' : '0 1px 3px rgba(0, 0, 0, 0.05)'};
-  transition: all 0.2s ease;
+  box-shadow: ${props => props.empty ? 'none' : '0 2px 6px rgba(0, 0, 0, 0.06)'};
+  transition: all 0.2s ease-in-out;
   border-left: ${props => props.empty ? 'none' : `3px solid ${props.borderColor || props.color || '#E1F5FE'}`};
   cursor: ${props => props.empty ? 'default' : 'pointer'};
+  backdrop-filter: ${props => props.empty ? 'none' : 'saturate(1.1)'};
   
   &:hover {
-    box-shadow: ${props => props.empty ? 'none' : '0 2px 6px rgba(0, 0, 0, 0.07)'};
-    transform: ${props => props.empty ? 'none' : 'translateY(-2px)'};
+    box-shadow: ${props => props.empty ? 'none' : '0 3px 8px rgba(0, 0, 0, 0.09)'};
+    transform: ${props => props.empty ? 'none' : 'translateY(-1px) scale(1.01)'};
+  }
+  
+  &:active {
+    transform: ${props => props.empty ? 'none' : 'translateY(0px) scale(0.99)'};
+    box-shadow: ${props => props.empty ? 'none' : '0 1px 3px rgba(0, 0, 0, 0.08)'};
+  }
+  
+  &:last-child {
+    margin-bottom: 0;
   }
   
   @media (max-width: 768px) {
-    padding: 6px 8px;
+    padding: 7px 9px;
     font-size: 10px;
   }
 `;
@@ -162,6 +193,7 @@ const Subject = styled.div`
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  letter-spacing: -0.2px;
   
   @media (max-width: 768px) {
     font-size: 11px;
@@ -203,29 +235,37 @@ const Info = styled.div`
 const ClickableInfo = styled(Info)`
   cursor: pointer;
   color: ${colors.primary};
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
   position: relative;
+  font-weight: 500;
   
   &:hover {
     color: #0071E3;
     
     svg {
       opacity: 1;
+      transform: translateX(1px);
     }
+  }
+  
+  svg {
+    transition: transform 0.2s ease;
   }
 `;
 
 const Badge = styled.span`
   display: inline-block;
-  padding: 2px 6px;
+  padding: 2.5px 7px;
   border-radius: 12px;
   font-size: 9px;
   font-weight: 500;
-  background-color: rgba(0, 0, 0, 0.04);
+  background-color: rgba(0, 0, 0, 0.035);
   color: #636366;
   margin-top: auto;
   margin-bottom: 2px;
   align-self: flex-start;
+  letter-spacing: -0.1px;
+  border: 0.5px solid rgba(0, 0, 0, 0.04);
 `;
 
 const ModalOverlay = styled.div`
@@ -245,12 +285,12 @@ const ModalOverlay = styled.div`
 const ModalContent = styled.div`
   background-color: white;
   border-radius: 16px;
-  padding: 20px;
+  padding: 24px;
   max-width: 90%;
   width: 500px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
 `;
 
 const ModalHeader = styled.div`
@@ -296,9 +336,16 @@ const ModalLabel = styled.div`
 const ModalValue = styled.div`
   font-size: 14px;
   color: #1C1C1E;
+  
+  & > div {
+    margin-bottom: 6px;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
 `;
 
-// Компонент для отображения индикатора загрузки
 const LoadingIndicator = styled.div`
   display: flex;
   align-items: center;
@@ -322,7 +369,7 @@ const LoadingIndicator = styled.div`
   }
 `;
 
-// Константы и вспомогательные функции
+// Вспомогательные функции
 const getDarkerColor = (color) => {
   if (!color || color === '#F2F2F7') return '#D1D1D6';
 
@@ -340,6 +387,61 @@ const getDarkerColor = (color) => {
   }
 
   return color;
+};
+
+// Функция для группировки занятий в зависимости от типа просмотра
+const groupLessons = (lessons, viewType) => {
+  if (!lessons || lessons.length <= 1) return lessons;
+
+  // Для группы не выполняем группировку, показываем все занятия отдельно
+  if (viewType === 'group') {
+    return lessons;
+  }
+
+  // Группировка занятий для преподавателя или аудитории
+  const groupedLessons = [];
+  const groupMap = new Map();
+
+  lessons.forEach(lesson => {
+    // Создаем ключ для группировки в зависимости от типа просмотра
+    let key;
+
+    if (viewType === 'teacher') {
+      // Для преподавателя группируем по предмету и типу занятия
+      key = `${lesson.subject}|${lesson.lesson_type}`;
+    } else if (viewType === 'auditory') {
+      // Для аудитории группируем по предмету, типу занятия и преподавателю
+      key = `${lesson.subject}|${lesson.lesson_type}|${lesson.teacher_name}`;
+    }
+
+    if (!groupMap.has(key)) {
+      // Создаем новую запись с массивами для групп и аудиторий
+      groupMap.set(key, {
+        ...lesson,
+        group_names: lesson.group_name ? [lesson.group_name] : [],
+        auditories: lesson.auditory ? [lesson.auditory] : []
+      });
+    } else {
+      const groupedLesson = groupMap.get(key);
+
+      // Добавляем группу, если её ещё нет в массиве
+      if (lesson.group_name && !groupedLesson.group_names.includes(lesson.group_name)) {
+        groupedLesson.group_names.push(lesson.group_name);
+      }
+
+      // Добавляем аудиторию, если её ещё нет в массиве
+      if (lesson.auditory && !groupedLesson.auditories.includes(lesson.auditory)) {
+        groupedLesson.auditories.push(lesson.auditory);
+      }
+    }
+  });
+
+  // Преобразуем Map в массив
+  groupMap.forEach((value) => {
+    groupedLessons.push(value);
+  });
+
+  return groupedLessons;
 };
 
 const WEEKDAYS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -447,9 +549,9 @@ const getLessonTypeColor = (type) => {
     'лек.': '#E9F0FC',  // Лекция - голубой в стиле Apple
     'лекция': '#E9F0FC',
 
-    'пр.': '#E3F3E8',   // Практика - зеленый в стиле Apple
-    'практика': '#E3F3E8',
-    'практ.': '#E3F3E8',
+    'пр.': '#E3F9E5',   // Практика - зеленый в стиле Apple
+    'практика': '#E3F9E5',
+    'практ.': '#E3F9E5',
 
     'лаб.': '#FFF8E8',  // Лабораторная - желтый в стиле Apple
     'лаб': '#FFF8E8',
@@ -634,6 +736,16 @@ const ScheduleTable = ({ schedule = [], dates = {}, view = 'group', loading = fa
     }
   });
 
+  // Применяем группировку занятий
+  for (let weekday = 1; weekday <= 6; weekday++) {
+    for (let lessonIndex = 0; lessonIndex < 8; lessonIndex++) {
+      scheduleData[weekday][lessonIndex] = groupLessons(
+        scheduleData[weekday][lessonIndex],
+        view
+      );
+    }
+  }
+
   return (
     <>
       <ScheduleContainer>
@@ -682,10 +794,22 @@ const ScheduleTable = ({ schedule = [], dates = {}, view = 'group', loading = fa
                               {lesson.subject}
                             </Subject>
 
-                            {view !== 'group' && lesson.group_name && (
-                              <ClickableInfo onClick={(e) => handleGroupClick(lesson.group_name, e)}>
+                            {view !== 'group' && (lesson.group_names?.length > 0 || lesson.group_name) && (
+                              <ClickableInfo onClick={(e) => {
+                                // Если есть несколько групп, используем первую для навигации
+                                const groupToNav = lesson.group_names?.length > 0
+                                  ? lesson.group_names[0]
+                                  : lesson.group_name;
+                                handleGroupClick(groupToNav, e);
+                              }}>
                                 <GroupIcon />
-                                <span>{lesson.group_name}</span>
+                                <span>
+                                  {lesson.group_names?.length > 0
+                                    ? (lesson.group_names.length > 1
+                                        ? `${lesson.group_names[0]} +${lesson.group_names.length - 1}`
+                                        : lesson.group_names[0])
+                                    : lesson.group_name}
+                                </span>
                               </ClickableInfo>
                             )}
 
@@ -696,10 +820,22 @@ const ScheduleTable = ({ schedule = [], dates = {}, view = 'group', loading = fa
                               </ClickableInfo>
                             )}
 
-                            {view !== 'auditory' && lesson.auditory && (
-                              <ClickableInfo onClick={(e) => handleAuditoryClick(lesson.auditory, e)}>
+                            {view !== 'auditory' && (lesson.auditories?.length > 0 || lesson.auditory) && (
+                              <ClickableInfo onClick={(e) => {
+                                // Если есть несколько аудиторий, используем первую для навигации
+                                const auditoryToNav = lesson.auditories?.length > 0
+                                  ? lesson.auditories[0]
+                                  : lesson.auditory;
+                                handleAuditoryClick(auditoryToNav, e);
+                              }}>
                                 <LocationIcon />
-                                <span>{lesson.auditory}</span>
+                                <span>
+                                  {lesson.auditories?.length > 0
+                                    ? (lesson.auditories.length > 1
+                                        ? `${lesson.auditories[0]} +${lesson.auditories.length - 1}`
+                                        : lesson.auditories[0])
+                                    : lesson.auditory}
+                                </span>
                               </ClickableInfo>
                             )}
 
@@ -748,7 +884,20 @@ const ScheduleTable = ({ schedule = [], dates = {}, view = 'group', loading = fa
               </ModalValue>
             </ModalRow>
 
-            {selectedLesson.group_name && (
+            {/* Показываем группы */}
+            {selectedLesson.group_names?.length > 0 ? (
+              <ModalRow>
+                <ModalLabel>Группы</ModalLabel>
+                <ModalValue>
+                  {selectedLesson.group_names.map((group, idx) => (
+                    <ClickableInfo key={idx} onClick={(e) => handleGroupClick(group, e)}>
+                      <GroupIcon />
+                      <span>{group}</span>
+                    </ClickableInfo>
+                  ))}
+                </ModalValue>
+              </ModalRow>
+            ) : selectedLesson.group_name ? (
               <ModalRow>
                 <ModalLabel>Группа</ModalLabel>
                 <ModalValue>
@@ -758,7 +907,7 @@ const ScheduleTable = ({ schedule = [], dates = {}, view = 'group', loading = fa
                   </ClickableInfo>
                 </ModalValue>
               </ModalRow>
-            )}
+            ) : null}
 
             {selectedLesson.teacher_name && (
               <ModalRow>
@@ -772,7 +921,20 @@ const ScheduleTable = ({ schedule = [], dates = {}, view = 'group', loading = fa
               </ModalRow>
             )}
 
-            {selectedLesson.auditory && (
+            {/* Показываем аудитории */}
+            {selectedLesson.auditories?.length > 0 ? (
+              <ModalRow>
+                <ModalLabel>Аудитории</ModalLabel>
+                <ModalValue>
+                  {selectedLesson.auditories.map((auditory, idx) => (
+                    <ClickableInfo key={idx} onClick={(e) => handleAuditoryClick(auditory, e)}>
+                      <LocationIcon />
+                      <span>{auditory}</span>
+                    </ClickableInfo>
+                  ))}
+                </ModalValue>
+              </ModalRow>
+            ) : selectedLesson.auditory ? (
               <ModalRow>
                 <ModalLabel>Аудитория</ModalLabel>
                 <ModalValue>
@@ -782,7 +944,7 @@ const ScheduleTable = ({ schedule = [], dates = {}, view = 'group', loading = fa
                   </ClickableInfo>
                 </ModalValue>
               </ModalRow>
-            )}
+            ) : null}
 
             {selectedLesson.faculty && (
               <ModalRow>

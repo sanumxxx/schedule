@@ -252,9 +252,6 @@ const HomePage = () => {
 
   // Обработчик выбора элемента
   const handleItemSelect = (item) => {
-    const currentSemester = 1; // или 2, в зависимости от текущего времени
-    const currentWeek = 1; // или другое значение в зависимости от текущего времени
-
     let itemId;
     switch (activeTab) {
       case 'groups':
@@ -270,7 +267,9 @@ const HomePage = () => {
         return;
     }
 
-    navigate(`/schedule/${activeTab.slice(0, -1)}/${itemId}/${currentSemester}/${currentWeek}`);
+    // Просто переходим к расписанию без указания семестра и недели,
+    // чтобы SchedulePage автоматически определил текущую неделю
+    navigate(`/schedule/${activeTab.slice(0, -1)}/${itemId}`);
   };
 
   return (
