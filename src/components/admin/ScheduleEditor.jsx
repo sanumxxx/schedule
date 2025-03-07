@@ -14,7 +14,7 @@ import {
   Column
 } from '../common/StyledComponents';
 import SearchBar from '../common/SearchBar';
-import { scheduleApi } from '../../api/api';
+import { scheduleApi, timeSlotsApi } from '../../api/api';
 
 // Стили для таблицы расписания
 const Table = styled.table`
@@ -82,6 +82,20 @@ const CloseButton = styled.button`
   }
 `;
 
+const LoadingSpinner = styled.div`
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(0, 122, 255, 0.2);
+  border-radius: 50%;
+  border-top-color: #007AFF;
+  animation: spin 1s ease-in-out infinite;
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+`;
+
 const ScheduleEditor = () => {
   const [scheduleItems, setScheduleItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -101,6 +115,10 @@ const ScheduleEditor = () => {
     teacher_name: ''
   });
 
+  // Состояние для временных слотов
+  const [timeSlots, setTimeSlots] = useState([]);
+  const [timeSlotsLoading, setTimeSlotsLoading] = useState(true);
+
   // Состояние для формы
   const [formData, setFormData] = useState({
     semester: 1,
@@ -112,8 +130,8 @@ const ScheduleEditor = () => {
     lesson_type: 'лек.',
     subgroup: 0,
     date: '',
-    time_start: '08:00',
-    time_end: '09:20',
+    time_start: '',
+    time_end: '',
     weekday: 1,
     teacher_name: '',
     auditory: ''
@@ -123,11 +141,35 @@ const ScheduleEditor = () => {
 
   // Загрузка данных при монтировании компонента и изменении фильтров или поиска
   useEffect(() => {
-    const fetchSchedule = async () => {
+    const fetchData = async () => {
       setLoading(true);
       setError(null);
 
       try {
+        // Загрузка временных слотов
+        if (timeSlotsLoading) {
+          try {
+            const timeSlotsResponse = await timeSlotsApi.getTimeSlots();
+            const activeSlots = timeSlotsResponse.data
+              .filter(slot => slot.is_active)
+              .sort((a, b) => a.slot_number - b.slot_number);
+            setTimeSlots(activeSlots);
+
+            // Установка значений по умолчанию для формы, если есть временные слоты
+            if (activeSlots.length > 0) {
+              setFormData(prev => ({
+                ...prev,
+                time_start: activeSlots[0].time_start,
+                time_end: activeSlots[0].time_end
+              }));
+            }
+          } catch (err) {
+            console.error('Ошибка при загрузке временных слотов:', err);
+          } finally {
+            setTimeSlotsLoading(false);
+          }
+        }
+
         // Формируем параметры запроса из фильтров
         const params = { ...filters };
 
@@ -146,8 +188,8 @@ const ScheduleEditor = () => {
       }
     };
 
-    fetchSchedule();
-  }, [filters, searchText]);
+    fetchData();
+  }, [filters, searchText, timeSlotsLoading]);
 
   // Обработчик поиска
   const handleSearch = (text) => {
@@ -180,7 +222,9 @@ const ScheduleEditor = () => {
   // Открытие модального окна для создания записи
   const handleCreate = () => {
     setModalMode('create');
-    setFormData({
+
+    // Установка значений по умолчанию
+    const defaultFormData = {
       semester: 1,
       week_number: 1,
       group_name: '',
@@ -190,12 +234,21 @@ const ScheduleEditor = () => {
       lesson_type: 'лек.',
       subgroup: 0,
       date: new Date().toISOString().split('T')[0],
-      time_start: '08:00',
-      time_end: '09:20',
       weekday: 1,
       teacher_name: '',
       auditory: ''
-    });
+    };
+
+    // Добавляем значения времени из первого доступного временного слота
+    if (timeSlots.length > 0) {
+      defaultFormData.time_start = timeSlots[0].time_start;
+      defaultFormData.time_end = timeSlots[0].time_end;
+    } else {
+      defaultFormData.time_start = '08:00';
+      defaultFormData.time_end = '09:20';
+    }
+
+    setFormData(defaultFormData);
     setFormError(null);
     setShowModal(true);
   };
@@ -364,11 +417,16 @@ const ScheduleEditor = () => {
         </Row>
 
         {loading ? (
-          <div>Загрузка...</div>
+          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <LoadingSpinner />
+            <div style={{ marginTop: '12px' }}>Загрузка...</div>
+          </div>
         ) : error ? (
           <div>{error}</div>
         ) : scheduleItems.length === 0 ? (
-          <div>Нет данных</div>
+          <div style={{ textAlign: 'center', padding: '40px 0', color: '#8E8E93' }}>
+            Нет данных
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <Table>
@@ -590,15 +648,26 @@ const ScheduleEditor = () => {
                       value={formData.time_start}
                       onChange={handleFormChange}
                       required
+                      disabled={timeSlotsLoading}
                     >
-                      <option value="08:00">08:00</option>
-                      <option value="09:30">09:30</option>
-                      <option value="11:10">11:10</option>
-                      <option value="12:40">12:40</option>
-                      <option value="14:10">14:10</option>
-                      <option value="15:40">15:40</option>
-                      <option value="17:10">17:10</option>
-                      <option value="18:40">18:40</option>
+                      {timeSlotsLoading ? (
+                        <option value="">Загрузка...</option>
+                      ) : timeSlots.length > 0 ? (
+                        timeSlots.map(slot => (
+                          <option key={`start_${slot.id}`} value={slot.time_start}>{slot.time_start}</option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="08:00">08:00</option>
+                          <option value="09:30">09:30</option>
+                          <option value="11:10">11:10</option>
+                          <option value="12:40">12:40</option>
+                          <option value="14:10">14:10</option>
+                          <option value="15:40">15:40</option>
+                          <option value="17:10">17:10</option>
+                          <option value="18:40">18:40</option>
+                        </>
+                      )}
                     </Select>
                   </FormGroup>
                 </Column>
@@ -611,15 +680,26 @@ const ScheduleEditor = () => {
                       value={formData.time_end}
                       onChange={handleFormChange}
                       required
+                      disabled={timeSlotsLoading}
                     >
-                      <option value="09:20">09:20</option>
-                      <option value="10:50">10:50</option>
-                      <option value="12:30">12:30</option>
-                      <option value="14:00">14:00</option>
-                      <option value="15:30">15:30</option>
-                      <option value="17:00">17:00</option>
-                      <option value="18:30">18:30</option>
-                      <option value="20:00">20:00</option>
+                      {timeSlotsLoading ? (
+                        <option value="">Загрузка...</option>
+                      ) : timeSlots.length > 0 ? (
+                        timeSlots.map(slot => (
+                          <option key={`end_${slot.id}`} value={slot.time_end}>{slot.time_end}</option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="09:20">09:20</option>
+                          <option value="10:50">10:50</option>
+                          <option value="12:30">12:30</option>
+                          <option value="14:00">14:00</option>
+                          <option value="15:30">15:30</option>
+                          <option value="17:00">17:00</option>
+                          <option value="18:30">18:30</option>
+                          <option value="20:00">20:00</option>
+                        </>
+                      )}
                     </Select>
                   </FormGroup>
                 </Column>

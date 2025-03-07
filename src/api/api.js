@@ -132,4 +132,30 @@ export const authApi = {
   }
 };
 
+export const timeSlotsApi = {
+  getTimeSlots: () => {
+    return api.get('/time_slots');
+  },
+
+  createTimeSlot: (data) => {
+    return api.post('/time_slots', data);
+  },
+
+  updateTimeSlot: (id, data) => {
+    return api.put(`/time_slots/${id}`, data);
+  },
+
+  deleteTimeSlot: (id) => {
+    return api.delete(`/time_slots/${id}`);
+  },
+
+  reorderTimeSlots: (order) => {
+    return api.post('/time_slots/reorder', order);
+  },
+
+  initDefaultTimeSlots: () => {
+    return api.post('/time_slots/init');
+  }
+};
+
 export default api;

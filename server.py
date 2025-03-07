@@ -77,6 +77,27 @@ class Schedule(db.Model):
         }
 
 
+class TimeSlot(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    slot_number = db.Column(db.Integer, nullable=False)  # For ordering
+    time_start = db.Column(db.String(5), nullable=False)
+    time_end = db.Column(db.String(5), nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'slot_number': self.slot_number,
+            'time_start': self.time_start,
+            'time_end': self.time_end,
+            'is_active': self.is_active,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
+            'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
+        }
+
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
@@ -273,6 +294,124 @@ def get_teachers():
 
     return jsonify(result), 200
 
+@app.route('/api/time_slots', methods=['GET'])
+def get_time_slots():
+    slots = TimeSlot.query.order_by(TimeSlot.slot_number).all()
+    return jsonify([slot.to_dict() for slot in slots]), 200
+
+
+# Admin-only endpoints to manage time slots
+@app.route('/api/time_slots', methods=['POST'])
+@token_required
+@admin_required
+def create_time_slot(current_user):
+    data = request.get_json()
+
+    # Validate required fields
+    required_fields = ['time_start', 'time_end']
+    for field in required_fields:
+        if field not in data or not data[field]:
+            return jsonify({'message': f'Поле {field} обязательно для заполнения!'}), 400
+
+    # Determine slot_number (put at the end by default)
+    max_slot = TimeSlot.query.order_by(TimeSlot.slot_number.desc()).first()
+    next_slot_number = 1 if not max_slot else max_slot.slot_number + 1
+
+    # Create new time slot
+    new_slot = TimeSlot(
+        slot_number=data.get('slot_number', next_slot_number),
+        time_start=data['time_start'],
+        time_end=data['time_end'],
+        is_active=data.get('is_active', True)
+    )
+
+    db.session.add(new_slot)
+    db.session.commit()
+
+    return jsonify(new_slot.to_dict()), 201
+
+
+@app.route('/api/time_slots/<int:id>', methods=['PUT'])
+@token_required
+@admin_required
+def update_time_slot(current_user, id):
+    slot = TimeSlot.query.get_or_404(id)
+    data = request.get_json()
+
+    if 'time_start' in data:
+        slot.time_start = data['time_start']
+    if 'time_end' in data:
+        slot.time_end = data['time_end']
+    if 'is_active' in data:
+        slot.is_active = data['is_active']
+    if 'slot_number' in data:
+        slot.slot_number = data['slot_number']
+
+    db.session.commit()
+
+    return jsonify(slot.to_dict()), 200
+
+
+@app.route('/api/time_slots/<int:id>', methods=['DELETE'])
+@token_required
+@admin_required
+def delete_time_slot(current_user, id):
+    slot = TimeSlot.query.get_or_404(id)
+
+    db.session.delete(slot)
+    db.session.commit()
+
+    return jsonify({'message': 'Временной слот успешно удален!'}), 200
+
+
+@app.route('/api/time_slots/reorder', methods=['POST'])
+@token_required
+@admin_required
+def reorder_time_slots(current_user):
+    data = request.get_json()
+
+    if not data or not isinstance(data, list):
+        return jsonify({'message': 'Ожидается массив с порядком слотов!'}), 400
+
+    # Update slot_number for each item
+    for item in data:
+        if 'id' in item and 'slot_number' in item:
+            slot = TimeSlot.query.get(item['id'])
+            if slot:
+                slot.slot_number = item['slot_number']
+
+    db.session.commit()
+
+    return jsonify({'message': 'Порядок временных слотов обновлен!'}), 200
+
+
+@app.route('/api/time_slots/init', methods=['POST'])
+@token_required
+@admin_required
+def init_time_slots(current_user):
+    # Check if time slots already exist
+    if TimeSlot.query.count() > 0:
+        return jsonify({'message': 'Временные слоты уже существуют!'}), 400
+
+    # Default time slots - these match the originally hardcoded values
+    default_slots = [
+        {'slot_number': 1, 'time_start': '08:00', 'time_end': '09:20'},
+        {'slot_number': 2, 'time_start': '09:30', 'time_end': '10:50'},
+        {'slot_number': 3, 'time_start': '11:00', 'time_end': '12:20'},
+        {'slot_number': 4, 'time_start': '12:40', 'time_end': '14:00'},
+        {'slot_number': 5, 'time_start': '14:10', 'time_end': '15:30'},
+        {'slot_number': 6, 'time_start': '15:40', 'time_end': '17:00'},
+        {'slot_number': 7, 'time_start': '17:10', 'time_end': '18:30'},
+        {'slot_number': 8, 'time_start': '18:40', 'time_end': '20:00'}
+    ]
+
+    for slot_data in default_slots:
+        slot = TimeSlot(**slot_data)
+        db.session.add(slot)
+
+    db.session.commit()
+
+    return jsonify({'message': 'Временные слоты успешно инициализированы!'}), 201
 
 # API для работы с аудиториями
 @app.route('/api/auditories', methods=['GET'])
@@ -1172,6 +1311,26 @@ def delete_user(current_user, id):
 def init_db():
     with app.app_context():
         db.create_all()
+
+        # Check if time slots already exist
+        if TimeSlot.query.count() == 0:
+            # Default time slots
+            default_slots = [
+                {'slot_number': 1, 'time_start': '08:00', 'time_end': '09:20'},
+                {'slot_number': 2, 'time_start': '09:30', 'time_end': '10:50'},
+                {'slot_number': 3, 'time_start': '11:00', 'time_end': '12:20'},
+                {'slot_number': 4, 'time_start': '12:40', 'time_end': '14:00'},
+                {'slot_number': 5, 'time_start': '14:10', 'time_end': '15:30'},
+                {'slot_number': 6, 'time_start': '15:40', 'time_end': '17:00'},
+                {'slot_number': 7, 'time_start': '17:10', 'time_end': '18:30'},
+                {'slot_number': 8, 'time_start': '18:40', 'time_end': '20:00'}
+            ]
+
+            for slot_data in default_slots:
+                slot = TimeSlot(**slot_data)
+                db.session.add(slot)
+
+            db.session.commit()
 
 
 if __name__ == '__main__':
