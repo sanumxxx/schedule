@@ -469,19 +469,21 @@ const MoveModal = styled(ModalContent)`
 
 const MoveOption = styled.div`
   padding: 12px;
-  border: 1px solid ${colors.lightGray};
+  border: 1px solid ${props => props.isOccupied ? colors.danger : colors.lightGray};
   border-radius: 8px;
   margin-bottom: 10px;
-  cursor: pointer;
+  cursor: ${props => props.isOccupied ? 'default' : 'pointer'};
   transition: all 0.2s;
+  background-color: ${props => props.isOccupied ? '#FFF5F5' : 'white'};
+  position: relative;
   
   &:hover {
-    background-color: #F9F9F9;
-    border-color: ${colors.primary};
+    background-color: ${props => props.isOccupied ? '#FFF5F5' : '#F9F9F9'};
+    border-color: ${props => props.isOccupied ? colors.danger : colors.primary};
   }
   
   &:active {
-    background-color: #F5F5F5;
+    background-color: ${props => props.isOccupied ? '#FFF5F5' : '#F5F5F5'};
   }
   
   strong {
@@ -532,6 +534,39 @@ const Tab = styled.div`
     color: ${colors.primary};
   }
 `;
+
+const OccupiedBadge = styled.div`
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background-color: ${colors.danger};
+  color: white;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 500;
+`;
+
+const ConflictInfo = styled.div`
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background-color: #FFF0F0;
+  border: 1px solid #FFD0D0;
+  font-size: 12px;
+  
+  div {
+    margin-bottom: 4px;
+  }
+  
+  strong {
+    font-weight: 600;
+    margin-bottom: 2px;
+    font-size: 13px;
+  }
+`;
+
+
 
 // Вспомогательные функции и константы
 // Функция для получения более темного цвета
@@ -882,19 +917,71 @@ const ScheduleTable = ({
   };
 
   // Обработчик открытия модального окна для переноса занятия
-  const handleOpenMoveModal = (e, lesson) => {
-    if (e) e.stopPropagation();
-    setSelectedLesson(lesson);
+const handleOpenMoveModal = async (e, lesson) => {
+  if (e) e.stopPropagation();
+  setSelectedLesson(lesson);
+  setMoveModalOpen(true);
+  setActionMenuOpen(false);
 
-    // Генерируем список доступных опций для переноса
+  try {
+    // Show loading state while fetching availability data
+    setAvailableMoveOptions([]);
+
+    // Get availability for the current classroom
+    const availabilityResponse = await scheduleApi.checkAvailability({
+      semester: semester,
+      week_number: week,
+      lesson_id: lesson.id,
+      auditory: lesson.auditory
+    });
+
+    const occupiedSlots = availabilityResponse.data.occupied_slots || [];
+
+    // Create a lookup map for quick conflict checking
+    const occupiedSlotsMap = {};
+    occupiedSlots.forEach(slot => {
+      const key = `${slot.weekday}_${slot.time_start}`;
+      occupiedSlotsMap[key] = slot;
+    });
+
+    // Generate list of available options for scheduling
     const options = [];
 
-    // Для каждого дня недели
+    // For each day of the week
     for (let dayIndex = 1; dayIndex <= 6; dayIndex++) {
       if (currentDates[dayIndex]) {
-        // Для каждого временного слота
+        // For each time slot
         for (const slot of timeSlots) {
-          // Пропускаем текущее время и день
+          // Skip the current time and day (current position)
+          if (dayIndex === lesson.weekday && slot.time_start === lesson.time_start) continue;
+
+          // Check if this slot is occupied
+          const key = `${dayIndex}_${slot.time_start}`;
+          const conflictingLesson = occupiedSlotsMap[key];
+
+          options.push({
+            weekday: dayIndex,
+            date: currentDates[dayIndex],
+            time_start: slot.time_start,
+            time_end: slot.time_end,
+            weekdayName: WEEKDAYS_FULL[dayIndex],
+            dateFormatted: formatDate(currentDates[dayIndex]),
+            isOccupied: !!conflictingLesson,
+            conflictingLesson: conflictingLesson
+          });
+        }
+      }
+    }
+
+    setAvailableMoveOptions(options);
+  } catch (err) {
+    console.error('Ошибка при проверке доступности:', err);
+    // Generate options without availability information as fallback
+    const options = [];
+
+    for (let dayIndex = 1; dayIndex <= 6; dayIndex++) {
+      if (currentDates[dayIndex]) {
+        for (const slot of timeSlots) {
           if (dayIndex === lesson.weekday && slot.time_start === lesson.time_start) continue;
 
           options.push({
@@ -903,42 +990,58 @@ const ScheduleTable = ({
             time_start: slot.time_start,
             time_end: slot.time_end,
             weekdayName: WEEKDAYS_FULL[dayIndex],
-            dateFormatted: formatDate(currentDates[dayIndex])
+            dateFormatted: formatDate(currentDates[dayIndex]),
+            isOccupied: false
           });
         }
       }
     }
 
     setAvailableMoveOptions(options);
-    setMoveModalOpen(true);
-    setActionMenuOpen(false);
-  };
+  }
+};
+const handleMove = async (option) => {
+  try {
+    // Create object with updated data for transfer
+    const updatedData = {
+      ...selectedLesson,
+      weekday: option.weekday,
+      date: option.date,
+      time_start: option.time_start,
+      time_end: option.time_end
+    };
 
-  // Обработчик переноса занятия
-  const handleMove = async (option) => {
-    try {
-      // Создаем объект с обновленными данными для переноса
-      const updatedData = {
-        ...selectedLesson,
-        weekday: option.weekday,
-        date: option.date,
-        time_start: option.time_start,
-        time_end: option.time_end
-      };
+    // Attempt to update the lesson
+    const response = await scheduleApi.updateScheduleItem(selectedLesson.id, updatedData);
 
-      await scheduleApi.updateScheduleItem(selectedLesson.id, updatedData);
+    // If successful, reload schedule and close modal
+    if (loadSchedule) {
+      loadSchedule(itemId, semester, week);
+    }
+    setMoveModalOpen(false);
+  } catch (err) {
+    console.error('Ошибка при переносе занятия:', err);
 
-      // Перезагружаем расписание
-      if (loadSchedule) {
-        loadSchedule(itemId, semester, week);
+    // Check if this is a conflict error (status 409)
+    if (err.response && err.response.status === 409) {
+      // Extract conflict information
+      const conflictData = err.response.data;
+      const conflicts = conflictData.conflicts || [];
+
+      // Create a more informative error message
+      let errorMessage = conflictData.message || 'Произошла ошибка при переносе занятия.';
+
+      if (conflicts.length > 0) {
+        errorMessage += '\n\nКонфликты с занятиями:\n• ' + conflicts.join('\n• ');
       }
 
-      setMoveModalOpen(false);
-    } catch (err) {
-      console.error('Ошибка при переносе занятия:', err);
-      alert('Произошла ошибка при переносе занятия.');
+      alert(errorMessage);
+    } else {
+      // Generic error message for other errors
+      alert('Произошла ошибка при переносе занятия. Возможно, выбранное время уже занято.');
     }
-  };
+  }
+};
 
   // Обработчик изменения данных формы редактирования
   const handleEditFormChange = (e) => {
@@ -998,6 +1101,8 @@ const ScheduleTable = ({
     setActiveTab('edit'); // Сразу открываем вкладку редактирования
     setEditModalOpen(true);
   };
+
+
 
   // Обработчик создания нового занятия
   const handleCreateNewLesson = async (e) => {

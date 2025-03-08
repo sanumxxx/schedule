@@ -804,6 +804,150 @@ def create_schedule(current_user):
 
     return jsonify(new_item.to_dict()), 201
 
+
+# Add this endpoint to your server.py file
+
+@app.route('/api/schedule/check_availability', methods=['POST'])
+@token_required
+def check_availability(current_user):
+    """Check availability of time slots for a specific week"""
+    data = request.get_json()
+
+    # Required parameters
+    semester = data.get('semester')
+    week_number = data.get('week_number')
+    lesson_id = data.get('lesson_id')  # ID of the lesson being moved
+    auditory = data.get('auditory')  # Auditory to check for
+
+    if not all([semester, week_number, auditory]):
+        return jsonify({'message': 'Missing required parameters'}), 400
+
+    # Get all occupied time slots for this week and auditory
+    occupied_slots = []
+
+    try:
+        # Find the occupied slots for this auditory
+        query = Schedule.query.filter(
+            Schedule.id != lesson_id,  # Exclude the current lesson
+            Schedule.semester == semester,
+            Schedule.week_number == week_number,
+            Schedule.auditory == auditory
+        )
+
+        occupied_lessons = query.all()
+
+        # Format the data to show occupied slots
+        for lesson in occupied_lessons:
+            occupied_slots.append({
+                'weekday': lesson.weekday,
+                'date': lesson.date.strftime('%Y-%m-%d') if lesson.date else None,
+                'time_start': lesson.time_start,
+                'time_end': lesson.time_end,
+                'subject': lesson.subject,
+                'group_name': lesson.group_name,
+                'teacher_name': lesson.teacher_name
+            })
+
+        # Return the list of occupied slots
+        return jsonify({
+            'auditory': auditory,
+            'occupied_slots': occupied_slots
+        }), 200
+
+    except Exception as e:
+        print(f"Error checking availability: {str(e)}")
+        return jsonify({'message': 'Error checking availability', 'error': str(e)}), 500
+
+
+# Improved PUT endpoint with better conflict checking
+@app.route('/api/schedule/<int:id>', methods=['PUT'])
+@token_required
+def update_schedule(current_user, id):
+    # Find the existing schedule item
+    item = Schedule.query.get_or_404(id)
+    data = request.get_json()
+
+    # Create a copy of the existing data to check for changes
+    new_date = data.get('date', item.date)
+    new_weekday = data.get('weekday', item.weekday)
+    new_time_start = data.get('time_start', item.time_start)
+    new_time_end = data.get('time_end', item.time_end)
+    new_auditory = data.get('auditory', item.auditory)
+
+    # Convert string date to Date object if needed
+    if isinstance(new_date, str):
+        try:
+            new_date = datetime.strptime(new_date, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'message': 'Неверный формат даты. Используйте YYYY-MM-DD.'}), 400
+
+    # Check if there are any time/location conflicts
+    if 'date' in data or 'weekday' in data or 'time_start' in data or 'time_end' in data or 'auditory' in data:
+        if new_auditory:  # Only check conflicts if auditory is specified
+            # Look for conflicts in the database
+            conflicts = Schedule.query.filter(
+                Schedule.id != id,  # Exclude the current lesson
+                Schedule.date == new_date,
+                Schedule.auditory == new_auditory,
+                # Check for time overlap
+                ((Schedule.time_start <= new_time_start) & (Schedule.time_end > new_time_start)) |
+                ((Schedule.time_start < new_time_end) & (Schedule.time_end >= new_time_end)) |
+                ((Schedule.time_start >= new_time_start) & (Schedule.time_end <= new_time_end))
+            ).all()
+
+            if conflicts:
+                # Found conflicting lessons
+                conflict_info = []
+                for c in conflicts:
+                    conflict_info.append({
+                        'id': c.id,
+                        'subject': c.subject,
+                        'group_name': c.group_name,
+                        'teacher_name': c.teacher_name,
+                        'time_start': c.time_start,
+                        'time_end': c.time_end
+                    })
+
+                return jsonify({
+                    'message': 'Конфликт расписания: это время и аудитория уже заняты',
+                    'conflicts': conflict_info
+                }), 409  # 409 Conflict status code
+
+    # If no conflicts, update the fields
+    if 'semester' in data:
+        item.semester = data['semester']
+    if 'week_number' in data:
+        item.week_number = data['week_number']
+    if 'group_name' in data:
+        item.group_name = data['group_name']
+    if 'course' in data:
+        item.course = data['course']
+    if 'faculty' in data:
+        item.faculty = data['faculty']
+    if 'subject' in data:
+        item.subject = data['subject']
+    if 'lesson_type' in data:
+        item.lesson_type = data['lesson_type']
+    if 'subgroup' in data:
+        item.subgroup = data['subgroup']
+    if 'date' in data:
+        item.date = new_date
+    if 'time_start' in data:
+        item.time_start = new_time_start
+    if 'time_end' in data:
+        item.time_end = new_time_end
+    if 'weekday' in data:
+        item.weekday = new_weekday
+    if 'teacher_name' in data:
+        item.teacher_name = data['teacher_name']
+    if 'auditory' in data:
+        item.auditory = new_auditory
+
+    # Update the item in the database
+    db.session.commit()
+
+    return jsonify(item.to_dict()), 200
+
 # Быстрое добавление записи в расписание БЕЗ авторизации
 @app.route('/api/quick_add_schedule', methods=['POST'])
 def quick_add_schedule():

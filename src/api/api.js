@@ -85,6 +85,9 @@ export const scheduleApi = {
       },
     });
   },
+  checkAvailability: (params) => {
+  return api.post('/schedule/check_availability', params);
+},
   uploadSchedule: (formData, config = {}) => {
     return api.post('/schedule/upload', formData, {
       headers: {
