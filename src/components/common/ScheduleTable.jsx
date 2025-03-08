@@ -463,8 +463,10 @@ const ActionModalButton = styled.button`
 
 // Модальное окно для переноса занятия
 const MoveModal = styled(ModalContent)`
-  width: 500px;
+  width: 650px;
   max-width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
 `;
 
 const MoveOption = styled.div`
@@ -472,23 +474,54 @@ const MoveOption = styled.div`
   border: 1px solid ${props => props.isOccupied ? colors.danger : colors.lightGray};
   border-radius: 8px;
   margin-bottom: 10px;
-  cursor: ${props => props.isOccupied ? 'default' : 'pointer'};
+  cursor: pointer;
   transition: all 0.2s;
   background-color: ${props => props.isOccupied ? '#FFF5F5' : 'white'};
   position: relative;
   
   &:hover {
-    background-color: ${props => props.isOccupied ? '#FFF5F5' : '#F9F9F9'};
+    background-color: ${props => props.isOccupied ? '#FFEAEA' : '#F9F9F9'};
     border-color: ${props => props.isOccupied ? colors.danger : colors.primary};
   }
   
   &:active {
-    background-color: ${props => props.isOccupied ? '#FFF5F5' : '#F5F5F5'};
+    background-color: ${props => props.isOccupied ? '#FFE0E0' : '#F5F5F5'};
   }
   
   strong {
     display: block;
     margin-bottom: 4px;
+  }
+`;
+
+const OccupiedBadge = styled.div`
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background-color: ${colors.danger};
+  color: white;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 500;
+`;
+
+const ConflictInfo = styled.div`
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background-color: #FFF0F0;
+  border: 1px solid #FFD0D0;
+  font-size: 12px;
+  
+  div {
+    margin-bottom: 4px;
+  }
+  
+  strong {
+    font-weight: 600;
+    margin-bottom: 2px;
+    font-size: 13px;
   }
 `;
 
@@ -535,38 +568,19 @@ const Tab = styled.div`
   }
 `;
 
-const OccupiedBadge = styled.div`
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  background-color: ${colors.danger};
-  color: white;
-  border-radius: 12px;
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 500;
-`;
-
-const ConflictInfo = styled.div`
-  margin-top: 8px;
-  padding: 8px;
-  border-radius: 6px;
-  background-color: #FFF0F0;
-  border: 1px solid #FFD0D0;
-  font-size: 12px;
+const LoadingSpinner = styled.div`
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(0, 122, 255, 0.2);
+  border-radius: 50%;
+  border-top-color: #007AFF;
+  animation: spin 1s ease-in-out infinite;
   
-  div {
-    margin-bottom: 4px;
-  }
-  
-  strong {
-    font-weight: 600;
-    margin-bottom: 2px;
-    font-size: 13px;
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 `;
-
-
 
 // Вспомогательные функции и константы
 // Функция для получения более темного цвета
@@ -917,92 +931,125 @@ const ScheduleTable = ({
   };
 
   // Обработчик открытия модального окна для переноса занятия
-const handleOpenMoveModal = async (e, lesson) => {
-  if (e) e.stopPropagation();
-  setSelectedLesson(lesson);
-  setMoveModalOpen(true);
-  setActionMenuOpen(false);
+  const handleOpenMoveModal = async (e, lesson) => {
+    if (e) e.stopPropagation();
+    setSelectedLesson(lesson);
+    setMoveModalOpen(true);
+    setActionMenuOpen(false);
 
-  try {
-    // Show loading state while fetching availability data
-    setAvailableMoveOptions([]);
+    try {
+      // Show loading state while fetching availability data
+      setAvailableMoveOptions([]);
 
-    // Get availability for the current classroom
-    const availabilityResponse = await scheduleApi.checkAvailability({
-      semester: semester,
-      week_number: week,
-      lesson_id: lesson.id,
-      auditory: lesson.auditory
-    });
+      // Get availability for the current classroom
+      const availabilityResponse = await scheduleApi.checkAvailability({
+        semester: semester,
+        week_number: week,
+        lesson_id: lesson.id,
+        auditory: lesson.auditory
+      });
 
-    const occupiedSlots = availabilityResponse.data.occupied_slots || [];
+      const occupiedSlots = availabilityResponse.data.occupied_slots || [];
 
-    // Create a lookup map for quick conflict checking
-    const occupiedSlotsMap = {};
-    occupiedSlots.forEach(slot => {
-      const key = `${slot.weekday}_${slot.time_start}`;
-      occupiedSlotsMap[key] = slot;
-    });
+      // Create a lookup map for quick conflict checking
+      const occupiedSlotsMap = {};
+      occupiedSlots.forEach(slot => {
+        const key = `${slot.weekday}_${slot.time_start}`;
+        occupiedSlotsMap[key] = slot;
+      });
 
-    // Generate list of available options for scheduling
-    const options = [];
+      // Generate list of available options for scheduling
+      const options = [];
 
-    // For each day of the week
-    for (let dayIndex = 1; dayIndex <= 6; dayIndex++) {
-      if (currentDates[dayIndex]) {
-        // For each time slot
-        for (const slot of timeSlots) {
-          // Skip the current time and day (current position)
-          if (dayIndex === lesson.weekday && slot.time_start === lesson.time_start) continue;
+      // For each day of the week
+      for (let dayIndex = 1; dayIndex <= 6; dayIndex++) {
+        if (currentDates[dayIndex]) {
+          // For each time slot
+          for (const slot of timeSlots) {
+            // Skip the current time and day (current position)
+            if (dayIndex === lesson.weekday && slot.time_start === lesson.time_start) continue;
 
-          // Check if this slot is occupied
-          const key = `${dayIndex}_${slot.time_start}`;
-          const conflictingLesson = occupiedSlotsMap[key];
+            // Check if this slot is occupied
+            const key = `${dayIndex}_${slot.time_start}`;
+            const conflictingLesson = occupiedSlotsMap[key];
 
-          options.push({
-            weekday: dayIndex,
-            date: currentDates[dayIndex],
-            time_start: slot.time_start,
-            time_end: slot.time_end,
-            weekdayName: WEEKDAYS_FULL[dayIndex],
-            dateFormatted: formatDate(currentDates[dayIndex]),
-            isOccupied: !!conflictingLesson,
-            conflictingLesson: conflictingLesson
-          });
+            options.push({
+              weekday: dayIndex,
+              date: currentDates[dayIndex],
+              time_start: slot.time_start,
+              time_end: slot.time_end,
+              weekdayName: WEEKDAYS_FULL[dayIndex],
+              dateFormatted: formatDate(currentDates[dayIndex]),
+              isOccupied: !!conflictingLesson,
+              conflictingLesson: conflictingLesson
+            });
+          }
         }
       }
-    }
 
-    setAvailableMoveOptions(options);
-  } catch (err) {
-    console.error('Ошибка при проверке доступности:', err);
-    // Generate options without availability information as fallback
-    const options = [];
+      // Sort options - free slots first, then occupied slots
+      const sortedOptions = options.sort((a, b) => {
+        // First sort by occupancy (free slots first)
+        if (a.isOccupied !== b.isOccupied) {
+          return a.isOccupied ? 1 : -1;
+        }
+        // Then sort by day of week
+        if (a.weekday !== b.weekday) {
+          return a.weekday - b.weekday;
+        }
+        // Finally sort by time
+        return a.time_start.localeCompare(b.time_start);
+      });
 
-    for (let dayIndex = 1; dayIndex <= 6; dayIndex++) {
-      if (currentDates[dayIndex]) {
-        for (const slot of timeSlots) {
-          if (dayIndex === lesson.weekday && slot.time_start === lesson.time_start) continue;
+      setAvailableMoveOptions(sortedOptions);
+    } catch (err) {
+      console.error('Ошибка при проверке доступности:', err);
+      // Generate options without availability information as fallback
+      const options = [];
 
-          options.push({
-            weekday: dayIndex,
-            date: currentDates[dayIndex],
-            time_start: slot.time_start,
-            time_end: slot.time_end,
-            weekdayName: WEEKDAYS_FULL[dayIndex],
-            dateFormatted: formatDate(currentDates[dayIndex]),
-            isOccupied: false
-          });
+      for (let dayIndex = 1; dayIndex <= 6; dayIndex++) {
+        if (currentDates[dayIndex]) {
+          for (const slot of timeSlots) {
+            if (dayIndex === lesson.weekday && slot.time_start === lesson.time_start) continue;
+
+            options.push({
+              weekday: dayIndex,
+              date: currentDates[dayIndex],
+              time_start: slot.time_start,
+              time_end: slot.time_end,
+              weekdayName: WEEKDAYS_FULL[dayIndex],
+              dateFormatted: formatDate(currentDates[dayIndex]),
+              isOccupied: false
+            });
+          }
         }
       }
-    }
 
-    setAvailableMoveOptions(options);
-  }
-};
+      setAvailableMoveOptions(options);
+    }
+  };
+
 const handleMove = async (option) => {
+  // Если слот занят, показать предупреждение и запросить подтверждение
+  if (option.isOccupied) {
+    const conflictInfo = option.conflictingLesson ?
+      `\n\nКонфликт с занятием: ${option.conflictingLesson.subject}` +
+      (option.conflictingLesson.group_name ? `\nГруппа: ${option.conflictingLesson.group_name}` : '') +
+      (option.conflictingLesson.teacher_name ? `\nПреподаватель: ${option.conflictingLesson.teacher_name}` : '') : '';
+
+    const confirmMove = window.confirm(
+      `Выбранное время уже занято: ${option.weekdayName}, ${option.dateFormatted}, ${option.time_start}-${option.time_end}` +
+      conflictInfo +
+      `\n\nВы уверены, что хотите перенести занятие на это время? При подтверждении существующее занятие может быть изменено или удалено.`
+    );
+
+    if (!confirmMove) {
+      return; // Пользователь отменил перенос
+    }
+  }
+
+  // Если пользователь подтвердил или слот свободен, продолжаем выполнение запроса
   try {
-    // Create object with updated data for transfer
     const updatedData = {
       ...selectedLesson,
       weekday: option.weekday,
@@ -1011,37 +1058,51 @@ const handleMove = async (option) => {
       time_end: option.time_end
     };
 
-    // Attempt to update the lesson
+    // Выполняем запрос на обновление
     const response = await scheduleApi.updateScheduleItem(selectedLesson.id, updatedData);
 
-    // If successful, reload schedule and close modal
-    if (loadSchedule) {
-      loadSchedule(itemId, semester, week);
-    }
-    setMoveModalOpen(false);
-  } catch (err) {
-    console.error('Ошибка при переносе занятия:', err);
-
-    // Check if this is a conflict error (status 409)
-    if (err.response && err.response.status === 409) {
-      // Extract conflict information
-      const conflictData = err.response.data;
-      const conflicts = conflictData.conflicts || [];
-
-      // Create a more informative error message
-      let errorMessage = conflictData.message || 'Произошла ошибка при переносе занятия.';
-
-      if (conflicts.length > 0) {
-        errorMessage += '\n\nКонфликты с занятиями:\n• ' + conflicts.join('\n• ');
+      // If successful, reload schedule and close modal
+      if (loadSchedule) {
+        loadSchedule(itemId, semester, week);
       }
+      setMoveModalOpen(false);
+    } catch (err) {
+      console.error('Ошибка при переносе занятия:', err);
 
-      alert(errorMessage);
-    } else {
-      // Generic error message for other errors
-      alert('Произошла ошибка при переносе занятия. Возможно, выбранное время уже занято.');
+      // Check if this is a conflict error (status 409)
+      if (err.response && err.response.status === 409) {
+        // Extract conflict information
+        const conflictData = err.response.data;
+        const conflicts = conflictData.conflicts || [];
+
+        // Create a more informative error message
+        let errorMessage = conflictData.message || 'Произошла ошибка при переносе занятия.';
+
+        if (conflicts && conflicts.length > 0) {
+          // Format each conflict into a readable bullet point
+          const conflictDetails = conflicts.map(conflict => {
+            let details = "";
+            if (typeof conflict === 'object') {
+              details = `Предмет: ${conflict.subject || 'Н/Д'}`;
+              if (conflict.group_name) details += `, Группа: ${conflict.group_name}`;
+              if (conflict.teacher_name) details += `, Преподаватель: ${conflict.teacher_name}`;
+              if (conflict.time_start && conflict.time_end) details += `, Время: ${conflict.time_start}-${conflict.time_end}`;
+            } else {
+              details = conflict;
+            }
+            return details;
+          });
+
+          errorMessage += '\n\nКонфликты с занятиями:\n• ' + conflictDetails.join('\n• ');
+        }
+
+        alert(errorMessage);
+      } else {
+        // Generic error message for other errors
+        alert('Произошла ошибка при переносе занятия. Возможно, выбранное время уже занято.');
+      }
     }
-  }
-};
+  };
 
   // Обработчик изменения данных формы редактирования
   const handleEditFormChange = (e) => {
@@ -1101,8 +1162,6 @@ const handleMove = async (option) => {
     setActiveTab('edit'); // Сразу открываем вкладку редактирования
     setEditModalOpen(true);
   };
-
-
 
   // Обработчик создания нового занятия
   const handleCreateNewLesson = async (e) => {
@@ -1767,23 +1826,80 @@ const handleMove = async (option) => {
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontWeight: '500', marginBottom: '8px' }}>Выберите новое время:</div>
 
-              <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                {availableMoveOptions.length > 0 ? (
-                  availableMoveOptions.map((option, index) => (
-                    <MoveOption
-                      key={index}
-                      onClick={() => handleMove(option)}
-                    >
-                      <strong>{option.weekdayName}, {option.dateFormatted}</strong>
-                      <div>{option.time_start} - {option.time_end}</div>
-                    </MoveOption>
-                  ))
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '20px 0', color: colors.gray }}>
-                    Нет доступных вариантов для переноса
+              {availableMoveOptions.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '20px 0', color: colors.gray }}>
+                  <div>Загрузка вариантов...</div>
+                  <div style={{ marginTop: '10px' }}>
+                    <LoadingSpinner />
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div>
+                      <span style={{
+                        display: 'inline-block',
+                        width: '12px',
+                        height: '12px',
+                        backgroundColor: 'white',
+                        border: `1px solid ${colors.lightGray}`,
+                        borderRadius: '3px',
+                        marginRight: '5px'
+                      }}></span>
+                      <span style={{ fontSize: '12px', color: colors.gray }}>Доступно</span>
+                    </div>
+                    <div>
+                      <span style={{
+                        display: 'inline-block',
+                        width: '12px',
+                        height: '12px',
+                        backgroundColor: '#FFF5F5',
+                        border: `1px solid ${colors.danger}`,
+                        borderRadius: '3px',
+                        marginRight: '5px'
+                      }}></span>
+                      <span style={{ fontSize: '12px', color: colors.gray }}>Занято</span>
+                    </div>
+                  </div>
+
+                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    {availableMoveOptions.map((option, index) => (
+                      <MoveOption
+  key={index}
+  isOccupied={option.isOccupied}
+  onClick={() => {
+    if (option.isOccupied) {
+      // Показываем информацию о конфликте, но всё равно даем возможность переместить
+      handleMove(option);
+    } else {
+      // Для свободных слотов перемещаем без подтверждения
+      handleMove(option);
+    }
+  }}
+>
+                        {option.isOccupied && (
+                          <OccupiedBadge>Занято</OccupiedBadge>
+                        )}
+                        <strong>{option.weekdayName}, {option.dateFormatted}</strong>
+                        <div>{option.time_start} - {option.time_end}</div>
+
+                        {option.isOccupied && option.conflictingLesson && (
+                          <ConflictInfo>
+                            <strong>Конфликт с занятием:</strong>
+                            <div>Предмет: {option.conflictingLesson.subject}</div>
+                            {option.conflictingLesson.group_name && (
+                              <div>Группа: {option.conflictingLesson.group_name}</div>
+                            )}
+                            {option.conflictingLesson.teacher_name && (
+                              <div>Преподаватель: {option.conflictingLesson.teacher_name}</div>
+                            )}
+                          </ConflictInfo>
+                        )}
+                      </MoveOption>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <ButtonRow>
