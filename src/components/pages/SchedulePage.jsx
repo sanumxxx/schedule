@@ -69,73 +69,23 @@ const AlertBox = styled.div`
   }
 `;
 
-// Вспомогательные функции
-// Определение текущего семестра на основе даты
+// Функция для создания URL с актуальными параметрами
+const generateScheduleUrl = (type, id, semester, week) => {
+  return `/schedule/${type}/${encodeURIComponent(id)}/${semester}/${week}`;
+};
+
+// Получение текущего семестра (запасной вариант)
 const getCurrentSemester = () => {
   const now = new Date();
-  const month = now.getMonth() + 1; // Январь = 1, Февраль = 2, и т.д.
+  const month = now.getMonth() + 1;
 
-  // Первый семестр: Сентябрь (9) - Январь (1)
-  // Второй семестр: Февраль (2) - Июнь (6)
   if (month >= 9 || month === 1) {
     return 1; // Первый семестр
   } else if (month >= 2 && month <= 6) {
     return 2; // Второй семестр
   } else {
-    // Для июля и августа (каникулы) - берем первый семестр,
-    // так как скоро начнется учебный год
     return 1;
   }
-};
-
-// Определение текущей учебной недели
-const getCurrentWeek = (semester) => {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
-  let year = currentYear;
-  let startDate;
-
-  // Определение учебного года
-  if (semester === 1 && currentMonth >= 9) {
-    // Первый семестр текущего учебного года (осень)
-    year = currentYear;
-  } else if (semester === 1 && currentMonth < 9) {
-    // Первый семестр прошлого учебного года
-    year = currentYear - 1;
-  } else if (semester === 2 && currentMonth >= 2 && currentMonth <= 8) {
-    // Второй семестр текущего учебного года (весна)
-    year = currentYear;
-  } else if (semester === 2 && (currentMonth === 1 || currentMonth === 12)) {
-    // Второй семестр следующего учебного года
-    year = currentMonth === 1 ? currentYear : currentYear + 1;
-  }
-
-  // Примерные даты начала семестров
-  if (semester === 1) {
-    // Первый семестр начинается 1 сентября
-    startDate = new Date(year, 8, 1); // Месяцы в JS от 0 до 11, где 8 = сентябрь
-  } else {
-    // Второй семестр начинается в начале февраля
-    startDate = new Date(year, 1, 10); // 10 февраля примерно
-  }
-
-  // Если текущая дата до начала семестра, возвращаем 1 неделю
-  if (now < startDate) {
-    return 1;
-  }
-
-  // Вычисляем разницу в днях и делим на 7, чтобы получить номер недели
-  const diffTime = Math.abs(now - startDate);
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  const weekNumber = Math.floor(diffDays / 7) + 1;
-
-  return weekNumber;
-};
-
-// Функция для создания URL с актуальными параметрами
-const generateScheduleUrl = (type, id, semester, week) => {
-  return `/schedule/${type}/${encodeURIComponent(id)}/${semester}/${week}`;
 };
 
 const SchedulePage = () => {
@@ -143,13 +93,13 @@ const SchedulePage = () => {
   const location = useLocation();
   const { type, id, semester: semesterParam, week: weekParam } = useParams();
 
-  // Просто парсим параметры URL без валидации
+  // Параметры из URL
   const parsedSemester = semesterParam && !isNaN(parseInt(semesterParam)) ? parseInt(semesterParam) : 0;
   const parsedWeek = weekParam && !isNaN(parseInt(weekParam)) ? parseInt(weekParam) : 0;
 
-  // Устанавливаем состояние точно по URL без автокоррекции
-  const [semester, setSemester] = useState(parsedSemester || getCurrentSemester());
-  const [week, setWeek] = useState(parsedWeek || getCurrentWeek(parsedSemester || getCurrentSemester()));
+  // Состояние компонента
+  const [semester, setSemester] = useState(parsedSemester || 1);
+  const [week, setWeek] = useState(parsedWeek || 1);
   const [schedule, setSchedule] = useState([]);
   const [dates, setDates] = useState({});
   const [loading, setLoading] = useState(true);
@@ -160,6 +110,9 @@ const SchedulePage = () => {
   const [exporting, setExporting] = useState(false);
   const [availableWeeks, setAvailableWeeks] = useState([]);
   const [loadingWeeks, setLoadingWeeks] = useState(false);
+
+  // Декодирование ID из URL
+  const decodedId = decodeURIComponent(id || '');
 
   // Проверка авторизации пользователя
   useEffect(() => {
@@ -182,16 +135,14 @@ const SchedulePage = () => {
     }
   }, []);
 
-  // Эффект для отслеживания изменений URL
+  // Отслеживание изменений URL
   useEffect(() => {
     if (semesterParam && weekParam) {
       const urlSemester = parseInt(semesterParam);
       const urlWeek = parseInt(weekParam);
 
-      // Обновляем состояние, если URL изменился
       if (urlSemester !== semester) {
         setSemester(urlSemester);
-        // При смене семестра нужно заново загрузить доступные недели
         fetchAvailableWeeks(urlSemester);
       }
       if (urlWeek !== week) {
@@ -200,64 +151,91 @@ const SchedulePage = () => {
     }
   }, [semesterParam, weekParam, location.pathname]);
 
-  // Проверка, может ли пользователь редактировать расписание
+  // Проверка прав на редактирование
   const canEditSchedule = isLoggedIn && (userRole === 'admin' || userRole === 'editor');
 
-  // Расшифровка типа расписания
+  // Определение типа для отображения
   const typeLabel = type === 'group' ? 'группы' :
                    type === 'teacher' ? 'преподавателя' :
                    'аудитории';
 
-  // Декодирование ID из URL
-  const decodedId = decodeURIComponent(id || '');
+  // Функция для определения текущей недели по данным из БД
+  const fetchCurrentWeekFromDB = useCallback(async () => {
+    try {
+      // Получаем текущую дату в формате YYYY-MM-DD
+      const today = new Date().toISOString().split('T')[0];
+
+      // Получаем все занятия для поиска
+      const response = await scheduleApi.getAllSchedule();
+
+      // Поиск занятия на сегодняшнюю дату
+      const todaySchedule = response.data.find(item => item.date === today);
+
+      if (todaySchedule) {
+        // Если нашли занятие на сегодня, берем из него семестр и неделю
+        return {
+          semester: todaySchedule.semester,
+          week: todaySchedule.week_number
+        };
+      }
+
+      // Если на сегодня нет занятий, ищем ближайшее будущее занятие
+      const todayDate = new Date(today);
+
+      // Сортируем занятия по дате
+      const futureSchedules = response.data
+        .filter(item => new Date(item.date) >= todayDate)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      if (futureSchedules.length > 0) {
+        // Берем данные из ближайшего будущего занятия
+        return {
+          semester: futureSchedules[0].semester,
+          week: futureSchedules[0].week_number
+        };
+      }
+
+      // Если нет ни сегодняшних, ни будущих занятий, берем последнее прошедшее
+      const pastSchedules = response.data
+        .filter(item => new Date(item.date) < todayDate)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      if (pastSchedules.length > 0) {
+        return {
+          semester: pastSchedules[0].semester,
+          week: pastSchedules[0].week_number
+        };
+      }
+
+      // Если совсем нет данных, возвращаем значения по умолчанию
+      return { semester: getCurrentSemester(), week: 1 };
+    } catch (error) {
+      console.error("Ошибка при определении текущей недели:", error);
+      return { semester: getCurrentSemester(), week: 1 };
+    }
+  }, []);
 
   // Функция для получения доступных недель
   const fetchAvailableWeeks = useCallback(async (sem) => {
     setLoadingWeeks(true);
     try {
-      // Здесь нужно вызвать API для получения списка доступных недель для семестра
-      // Поскольку такого метода может не быть, мы можем:
-      // 1. Либо добавить его в API и на бэкенде
-      // 2. Либо использовать временное решение - определять по существующему расписанию
+      // Получаем все расписание для выбранного семестра
+      const response = await scheduleApi.getAllSchedule({
+        semester: sem
+      });
 
-      // Для примера, предположим, что у нас есть метод для получения доступных недель:
-      // const response = await scheduleApi.getAvailableWeeks(sem);
-      // const weeks = response.data || [];
+      // Извлекаем уникальные номера недель
+      const weeks = [...new Set(response.data.map(item => item.week_number))];
 
-      // Временное решение - генерируем список недель вокруг текущей
-      const currentWeek = parseInt(weekParam) || getCurrentWeek(sem);
-
-      // Создаем массив недель, включая текущую и +/- 5 недель (если семестр 1)
-      // или +/- 10 недель (если семестр 2), с учетом текущей из URL
-      let weeks = [];
-
-      // Добавляем недели из запроса, если она не в нашем списке
-      if (currentWeek && !weeks.includes(currentWeek)) {
-        weeks.push(currentWeek);
-      }
-
-      // Для 1 семестра обычно недели 1-18, для 2 семестра - недели 18-36
-      if (sem === 1) {
-        weeks = Array.from({ length: 18 }, (_, i) => i + 1);
-      } else {
-        weeks = Array.from({ length: 18 }, (_, i) => i + 18);
-      }
-
-      // Сортируем и удаляем дубликаты
-      weeks = [...new Set(weeks)].sort((a, b) => a - b);
-
-      setAvailableWeeks(weeks);
+      // Сортируем недели
+      setAvailableWeeks(weeks.sort((a, b) => a - b));
     } catch (err) {
       console.error('Ошибка при получении доступных недель:', err);
-      // Запасной вариант - генерируем базовый список недель
-      const currentWeek = parseInt(weekParam) || getCurrentWeek(sem);
-      const maxWeek = sem === 1 ? 18 : 36;
-      const weeks = Array.from({ length: maxWeek }, (_, i) => i + 1);
-      setAvailableWeeks(weeks);
+      setAvailableWeeks([]);
     } finally {
       setLoadingWeeks(false);
     }
-  }, [weekParam]);
+  }, []);
 
   // Функция загрузки расписания
   const loadSchedule = useCallback(async (itemId, sem, wk) => {
@@ -285,9 +263,6 @@ const SchedulePage = () => {
       setSchedule(response.data.schedule || []);
       setDates(response.data.dates || {});
 
-      // После успешной загрузки, можно обновить информацию о доступных неделях
-      // на основе полученных данных (если используете временное решение)
-
       return response.data.schedule || [];
     } catch (err) {
       console.error('Ошибка при загрузке расписания:', err);
@@ -298,42 +273,63 @@ const SchedulePage = () => {
     }
   }, [type]);
 
-  // Загрузка начальных данных при монтировании компонента
+  // Загрузка начальных данных
   useEffect(() => {
-    if (decodedId && semester > 0 && week > 0) {
-      loadSchedule(decodedId, semester, week);
-      fetchAvailableWeeks(semester);
-    } else if (decodedId) {
-      // Если не заданы параметры, используем текущие значения
-      const currentSemester = getCurrentSemester();
-      const currentWeek = getCurrentWeek(currentSemester);
+    const initSchedule = async () => {
+      if (decodedId) {
+        if (parsedSemester > 0 && parsedWeek > 0) {
+          // Используем параметры из URL
+          await loadSchedule(decodedId, parsedSemester, parsedWeek);
+          await fetchAvailableWeeks(parsedSemester);
+        } else {
+          // Определяем текущую неделю из БД
+          try {
+            const { semester: currentSem, week: currentWeek } = await fetchCurrentWeekFromDB();
 
-      setSemester(currentSemester);
-      setWeek(currentWeek);
+            setSemester(currentSem);
+            setWeek(currentWeek);
 
-      // Обновляем URL и загружаем данные
-      navigate(generateScheduleUrl(type, id, currentSemester, currentWeek), { replace: true });
-      loadSchedule(decodedId, currentSemester, currentWeek);
-      fetchAvailableWeeks(currentSemester);
-    }
-  }, [decodedId, type, id, navigate, loadSchedule, fetchAvailableWeeks]);
+            // Обновляем URL и загружаем данные
+            navigate(generateScheduleUrl(type, id, currentSem, currentWeek), { replace: true });
+            await loadSchedule(decodedId, currentSem, currentWeek);
+            await fetchAvailableWeeks(currentSem);
+          } catch (error) {
+            console.error("Ошибка при инициализации:", error);
+
+            // Значения по умолчанию
+            const defaultSem = getCurrentSemester();
+            const defaultWeek = 1;
+
+            setSemester(defaultSem);
+            setWeek(defaultWeek);
+
+            navigate(generateScheduleUrl(type, id, defaultSem, defaultWeek), { replace: true });
+            await loadSchedule(decodedId, defaultSem, defaultWeek);
+            await fetchAvailableWeeks(defaultSem);
+          }
+        }
+      }
+    };
+
+    initSchedule();
+  }, [decodedId, type, id, parsedSemester, parsedWeek, loadSchedule, fetchAvailableWeeks, fetchCurrentWeekFromDB, navigate]);
 
   // Обработчик изменения семестра
-  const handleSemesterChange = (e) => {
+  const handleSemesterChange = async (e) => {
     const newSemester = parseInt(e.target.value);
-    // Обновляем состояние
     setSemester(newSemester);
 
     // Загружаем доступные недели для нового семестра
-    fetchAvailableWeeks(newSemester);
+    await fetchAvailableWeeks(newSemester);
 
-    // Выбираем первую доступную неделю из нового семестра
-    // или сохраняем текущую, если она попадает в диапазон нового семестра
+    // Выбираем неделю из доступных
     let newWeek = week;
-    if (newSemester === 1 && week > 18) {
+    if (availableWeeks.length > 0) {
+      if (!availableWeeks.includes(week)) {
+        newWeek = availableWeeks[0];
+      }
+    } else {
       newWeek = 1;
-    } else if (newSemester === 2 && week < 19) {
-      newWeek = 19;
     }
 
     setWeek(newWeek);
@@ -346,11 +342,10 @@ const SchedulePage = () => {
   // Обработчик изменения недели
   const handleWeekChange = (e) => {
     const newWeek = parseInt(e.target.value);
-    // Обновляем состояние
     setWeek(newWeek);
-    // Обновляем URL
+
+    // Обновляем URL и загружаем данные
     navigate(generateScheduleUrl(type, id, semester, newWeek), { replace: true });
-    // Загружаем новые данные
     loadSchedule(decodedId, semester, newWeek);
   };
 
@@ -375,27 +370,26 @@ const SchedulePage = () => {
     navigate('/');
   };
 
-  // Обработчик для быстрой установки текущей недели
-  const handleSetCurrentWeek = () => {
-    const currentSemester = getCurrentSemester();
-    const currentWeek = getCurrentWeek(currentSemester);
+  // Обработчик для быстрой установки текущей недели из БД
+  const handleSetCurrentWeek = async () => {
+    try {
+      // Определяем текущую неделю из БД
+      const { semester: currentSem, week: currentWeek } = await fetchCurrentWeekFromDB();
 
-    // Обновляем состояния
-    setSemester(currentSemester);
-    setWeek(currentWeek);
+      // Обновляем состояния
+      setSemester(currentSem);
+      setWeek(currentWeek);
 
-    // Обновляем URL и загружаем данные
-    navigate(generateScheduleUrl(type, id, currentSemester, currentWeek), { replace: true });
-    loadSchedule(decodedId, currentSemester, currentWeek);
-    fetchAvailableWeeks(currentSemester);
+      // Обновляем URL и загружаем данные
+      navigate(generateScheduleUrl(type, id, currentSem, currentWeek), { replace: true });
+      await loadSchedule(decodedId, currentSem, currentWeek);
+      await fetchAvailableWeeks(currentSem);
+    } catch (error) {
+      console.error("Ошибка при установке текущей недели:", error);
+      setError('Не удалось определить текущую неделю');
+      setTimeout(() => setError(null), 3000);
+    }
   };
-
-  // Отфильтрованный список недель для отображения в селекторе
-  const filteredWeeks = loadingWeeks
-    ? []
-    : availableWeeks.length > 0
-      ? availableWeeks
-      : (semester === 1 ? Array.from({ length: 18 }, (_, i) => i + 1) : Array.from({ length: 18 }, (_, i) => i + 18));
 
   return (
     <PageContainer>
@@ -449,14 +443,13 @@ const SchedulePage = () => {
                 <Select value={week} onChange={handleWeekChange} disabled={loading || loadingWeeks} style={{ flex: 1 }}>
                   {loadingWeeks ? (
                     <option value={week}>Загрузка недель...</option>
-                  ) : (
-                    // Показываем только недели из списка доступных
-                    filteredWeeks.map(num => (
+                  ) : availableWeeks.length > 0 ? (
+                    // Показываем только недели, которые есть в базе данных
+                    availableWeeks.map(num => (
                       <option key={num} value={num}>{num} неделя</option>
                     ))
-                  )}
-                  {/* Если текущей недели нет в списке, добавляем её отдельно */}
-                  {!loadingWeeks && !filteredWeeks.includes(week) && (
+                  ) : (
+                    // Если нет данных, показываем только текущую неделю
                     <option value={week}>{week} неделя</option>
                   )}
                 </Select>

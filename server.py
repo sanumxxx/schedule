@@ -584,138 +584,347 @@ def get_auditory_schedule(auditory):
 
 
 # Экспорт расписания в Excel
+# Экспорт расписания в Excel
 @app.route('/api/schedule/<string:type>/<string:id>/export', methods=['GET'])
 def export_schedule(type, id):
-    semester = request.args.get('semester', 1, type=int)
-    week = request.args.get('week', 1, type=int)
+    try:
+        # Получаем параметры запроса
+        semester = request.args.get('semester', 1, type=int)
+        week = request.args.get('week', 1, type=int)
 
-    # Получаем расписание в зависимости от типа
-    if type == 'group':
-        schedule_items = Schedule.query.filter_by(
-            group_name=id,
-            semester=semester,
-            week_number=week
-        ).order_by(Schedule.weekday, Schedule.time_start).all()
-        name = f"Расписание группы {id}"
-    elif type == 'teacher':
-        schedule_items = Schedule.query.filter_by(
-            teacher_name=id,
-            semester=semester,
-            week_number=week
-        ).order_by(Schedule.weekday, Schedule.time_start).all()
-        name = f"Расписание преподавателя {id}"
-    elif type == 'auditory':
-        schedule_items = Schedule.query.filter_by(
-            auditory=id,
-            semester=semester,
-            week_number=week
-        ).order_by(Schedule.weekday, Schedule.time_start).all()
-        name = f"Расписание аудитории {id}"
-    else:
-        return jsonify({'message': 'Неизвестный тип расписания!'}), 400
+        # Проверка корректности типа
+        if type not in ['group', 'teacher', 'auditory']:
+            return jsonify({'message': 'Неизвестный тип расписания!'}), 400
 
-    # Получаем даты для недели
-    year = datetime.now().year
-    dates = get_dates_for_week(year, week)
+        # Получаем расписание в зависимости от типа
+        if type == 'group':
+            schedule_items = Schedule.query.filter_by(
+                group_name=id,
+                semester=semester,
+                week_number=week
+            ).order_by(Schedule.weekday, Schedule.time_start).all()
+            name = f"Расписание группы {id}"
+        elif type == 'teacher':
+            schedule_items = Schedule.query.filter_by(
+                teacher_name=id,
+                semester=semester,
+                week_number=week
+            ).order_by(Schedule.weekday, Schedule.time_start).all()
+            name = f"Расписание преподавателя {id}"
+        elif type == 'auditory':
+            schedule_items = Schedule.query.filter_by(
+                auditory=id,
+                semester=semester,
+                week_number=week
+            ).order_by(Schedule.weekday, Schedule.time_start).all()
+            name = f"Расписание аудитории {id}"
 
-    # Создаем Excel файл
-    output = io.BytesIO()
-    workbook = xlsxwriter.Workbook(output)
-    worksheet = workbook.add_worksheet()
+        # Проверяем, есть ли данные для экспорта
+        if not schedule_items:
+            return jsonify({'message': f'Нет данных для экспорта по заданным параметрам'}), 404
 
-    # Форматы для заголовков и ячеек
-    header_format = workbook.add_format({
-        'bold': True,
-        'align': 'center',
-        'valign': 'vcenter',
-        'bg_color': '#D8D8D8',
-        'border': 1
-    })
+        # Определяем год для семестра
+        current_date = datetime.now()
+        year = current_date.year
 
-    cell_format = workbook.add_format({
-        'align': 'center',
-        'valign': 'vcenter',
-        'border': 1
-    })
+        # Логика определения года в зависимости от семестра
+        if semester == 2 and current_date.month < 8:
+            # Второй семестр текущего учебного года (весна)
+            pass
+        elif semester == 1 and current_date.month >= 8:
+            # Первый семестр текущего учебного года (осень)
+            pass
+        else:
+            # Корректируем год
+            year = year - 1 if semester == 1 else year
 
-    # Заголовки столбцов
-    weekdays = ['Время', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
+        # Получаем даты для недели
+        dates = get_dates_for_week(year, week)
 
-    for col, day in enumerate(weekdays):
-        worksheet.write(0, col, day, header_format)
-        worksheet.set_column(col, col, 20)
+        # Получаем актуальные временные слоты
+        time_slots = TimeSlot.query.filter_by(is_active=True).order_by(TimeSlot.slot_number).all()
 
-    # Заголовки строк (время пар)
-    times = [
-        '08:00-09:20',
-        '09:30-10:50',
-        '11:10-12:30',
-        '12:40-14:00',
-        '14:10-15:30',
-        '15:40-17:00',
-        '17:10-18:30',
-        '18:40-20:00'
-    ]
+        # Функция для форматирования текста ячейки
+        def format_lesson_cell(item, type):
+            cell_text = f"{item.subject}\n"
 
-    for row, time in enumerate(times):
-        worksheet.write(row + 1, 0, time, cell_format)
+            if type != 'group':
+                cell_text += f"Группа: {item.group_name}\n"
 
-    # Заполняем таблицу данными
-    for item in schedule_items:
-        # Определяем строку (по времени)
-        time_index = -1
-        for i, time in enumerate(times):
-            start, end = time.split('-')
-            if item.time_start == start and item.time_end == end:
-                time_index = i
-                break
+            if type != 'teacher' and item.teacher_name:
+                cell_text += f"Преп.: {item.teacher_name}\n"
 
-        if time_index == -1:
-            continue
+            if type != 'auditory' and item.auditory:
+                cell_text += f"Ауд.: {item.auditory}\n"
 
-        row = time_index + 1
-        col = item.weekday
+            if item.lesson_type:
+                cell_text += f"Тип: {item.lesson_type}"
 
-        # Формируем текст ячейки
-        cell_text = f"{item.subject}\n"
+            if item.subgroup > 0:
+                cell_text += f" (п/г {item.subgroup})"
 
-        if type != 'group':
-            cell_text += f"Группа: {item.group_name}\n"
+            return cell_text
 
-        if type != 'teacher' and item.teacher_name:
-            cell_text += f"Преп.: {item.teacher_name}\n"
+        # Функция для оценки количества строк текста в ячейке
+        def estimate_row_height(text, chars_per_line=25):
+            # Подсчитываем количество строк по явным переносам
+            explicit_lines = text.count('\n') + 1
 
-        if type != 'auditory' and item.auditory:
-            cell_text += f"Ауд.: {item.auditory}\n"
+            # Оцениваем, сколько строк будет из-за переноса текста по ширине
+            total_chars = len(text.replace('\n', ''))
+            wrapped_lines = total_chars / chars_per_line
 
-        if item.lesson_type:
-            cell_text += f"Тип: {item.lesson_type}"
+            # Берем максимум из двух оценок и добавляем запас для межстрочных интервалов
+            estimated_lines = max(explicit_lines, wrapped_lines) * 1.2
 
-        # Записываем в ячейку
-        worksheet.write(row, col, cell_text, cell_format)
+            # Базовая высота одной строки в пикселях
+            line_height = 15
 
-    # Заголовок листа
-    worksheet.merge_range('A1:G1', name, header_format)
-    worksheet.write(0, 0, 'Время', header_format)
+            # Рассчитываем высоту в пикселях (минимум 60)
+            return max(60, int(estimated_lines * line_height))
 
-    # Даты под днями недели
-    for i in range(1, 7):
-        if i in dates:
-            date_obj = datetime.strptime(dates[i], '%Y-%m-%d')
-            formatted_date = date_obj.strftime('%d.%m.%Y')
-            worksheet.write(1, i, formatted_date, cell_format)
+        # Создаем Excel файл
+        output = io.BytesIO()
+        workbook = xlsxwriter.Workbook(output)
+        worksheet = workbook.add_worksheet()
 
-    workbook.close()
+        # Настройка форматов для Excel
+        header_format = workbook.add_format({
+            'bold': True,
+            'align': 'center',
+            'valign': 'vcenter',
+            'bg_color': '#D8D8D8',
+            'border': 1
+        })
 
-    # Подготавливаем файл для отправки
-    output.seek(0)
+        cell_format = workbook.add_format({
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1,
+            'text_wrap': True  # Перенос текста для лучшей читаемости
+        })
 
-    return send_file(
-        output,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        as_attachment=True,
-        download_name=f"{type}_{id}_schedule_{semester}_{week}.xlsx"
-    )
+        # Форматы для разных типов занятий
+        lecture_format = workbook.add_format({
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1,
+            'text_wrap': True,
+            'bg_color': '#E9F0FC'  # Голубой для лекций
+        })
+
+        practice_format = workbook.add_format({
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1,
+            'text_wrap': True,
+            'bg_color': '#E3F9E5'  # Зеленый для практик
+        })
+
+        lab_format = workbook.add_format({
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1,
+            'text_wrap': True,
+            'bg_color': '#FFF8E8'  # Желтый для лабораторных
+        })
+
+        seminar_format = workbook.add_format({
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1,
+            'text_wrap': True,
+            'bg_color': '#F2E8F7'  # Фиолетовый для семинаров
+        })
+
+        # Функция для определения формата ячейки в зависимости от типа занятия
+        def get_lesson_format(lesson_type):
+            if not lesson_type:
+                return cell_format
+
+            lesson_type_lower = lesson_type.lower()
+
+            if 'лек' in lesson_type_lower:
+                return lecture_format
+            elif 'пр' in lesson_type_lower:
+                return practice_format
+            elif 'лаб' in lesson_type_lower:
+                return lab_format
+            elif 'сем' in lesson_type_lower:
+                return seminar_format
+
+            return cell_format
+
+        # Заголовки столбцов
+        weekdays = ['Время', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
+
+        # Заголовок листа
+        worksheet.merge_range('A1:G1', f"{name} - {semester} семестр, {week} неделя", header_format)
+
+        # Установка ширины колонок
+        worksheet.set_column(0, 0, 15)  # Колонка времени
+        worksheet.set_column(1, 6, 30)  # Колонки дней недели - увеличиваем до 30 для лучшей читаемости
+
+        # Заголовки дней недели (со 2й строки)
+        for col, day in enumerate(weekdays):
+            worksheet.write(1, col, day, header_format)
+
+        # Даты под днями недели
+        row_index = 2  # Третья строка для дат
+        for i in range(1, 7):
+            if i in dates:
+                date_obj = datetime.strptime(dates[i], '%Y-%m-%d')
+                formatted_date = date_obj.strftime('%d.%m.%Y')
+                worksheet.write(row_index, i, formatted_date, cell_format)
+
+        row_index += 1  # Переходим к строке времени занятий
+
+        # Если нет временных слотов, создаем стандартный набор
+        if not time_slots:
+            default_times = [
+                {'time_start': '08:00', 'time_end': '09:20'},
+                {'time_start': '09:30', 'time_end': '10:50'},
+                {'time_start': '11:00', 'time_end': '12:20'},
+                {'time_start': '12:40', 'time_end': '14:00'},
+                {'time_start': '14:10', 'time_end': '15:30'},
+                {'time_start': '15:40', 'time_end': '17:00'},
+                {'time_start': '17:10', 'time_end': '18:30'},
+                {'time_start': '18:40', 'time_end': '20:00'}
+            ]
+
+            times = default_times
+        else:
+            # Извлекаем информацию о времени из временных слотов
+            times = [{'time_start': slot.time_start, 'time_end': slot.time_end} for slot in time_slots]
+
+        # Получаем все уникальные комбинации времени из расписания
+        unique_times = set()
+        for item in schedule_items:
+            unique_times.add(f"{item.time_start}-{item.time_end}")
+
+        # Добавляем времена из расписания, которых нет в стандартных слотах
+        standard_time_keys = set(f"{t['time_start']}-{t['time_end']}" for t in times)
+        for time_key in unique_times:
+            if time_key not in standard_time_keys:
+                start, end = time_key.split('-')
+                times.append({'time_start': start, 'time_end': end})
+
+        # Сортируем времена по времени начала
+        times.sort(key=lambda x: x['time_start'])
+
+        # Заголовки строк (время пар) и подготовка матрицы расписания
+        time_map = {}  # Карта для хранения индексов времен
+        for idx, time_slot in enumerate(times):
+            time_key = f"{time_slot['time_start']}-{time_slot['time_end']}"
+            time_map[time_key] = idx
+
+            # Записываем ячейку времени
+            time_str = f"{time_slot['time_start']}-{time_slot['time_end']}"
+            worksheet.write(row_index + idx, 0, time_str, cell_format)
+
+            # Инициализируем пустые ячейки для всех дней недели
+            for day in range(1, 7):
+                worksheet.write(row_index + idx, day, "", cell_format)
+
+        # Создаем матрицу для хранения содержимого ячеек
+        # (день недели, временной слот) -> [занятия]
+        schedule_matrix = {}
+
+        # Заполняем матрицу данными
+        for item in schedule_items:
+            time_key = f"{item.time_start}-{item.time_end}"
+
+            # Если этого времени нет в карте, добавляем его
+            if time_key not in time_map:
+                times.append({'time_start': item.time_start, 'time_end': item.time_end})
+                times.sort(key=lambda x: x['time_start'])
+
+                # Пересоздаем карту и пустые ячейки
+                time_map = {}
+                for idx, time_slot in enumerate(times):
+                    new_time_key = f"{time_slot['time_start']}-{time_slot['time_end']}"
+                    time_map[new_time_key] = idx
+
+                    # Перезаписываем ячейку времени
+                    time_str = f"{time_slot['time_start']}-{time_slot['time_end']}"
+                    worksheet.write(row_index + idx, 0, time_str, cell_format)
+
+                    # Перезаписываем пустые ячейки
+                    for day in range(1, 7):
+                        worksheet.write(row_index + idx, day, "", cell_format)
+
+            # Записываем занятие в матрицу
+            matrix_key = (item.weekday, time_key)
+
+            if matrix_key not in schedule_matrix:
+                schedule_matrix[matrix_key] = []
+
+            schedule_matrix[matrix_key].append(item)
+
+        # Словарь для отслеживания наибольшей высоты для каждого временного слота
+        row_heights = {}
+        for time_idx in range(len(times)):
+            row_heights[time_idx] = 60  # Минимальная высота 60 пикселей
+
+        # Заполняем таблицу из матрицы
+        for (day, time_key), items in schedule_matrix.items():
+            if not (1 <= day <= 6):  # Проверка валидности дня недели
+                continue
+
+            # Получаем индекс строки для этого времени
+            time_idx = time_map[time_key]
+
+            # Если несколько занятий в одной ячейке, объединяем их
+            if len(items) > 1:
+                combined_text = ""
+                for item in items:
+                    # Добавляем разделитель между занятиями
+                    if combined_text:
+                        combined_text += "\n---\n"
+
+                    combined_text += format_lesson_cell(item, type)
+
+                # Оцениваем необходимую высоту на основе текста
+                cell_height = estimate_row_height(combined_text,
+                                                  chars_per_line=30)  # 30 символов на строку для ширины колонки 30
+
+                # Обновляем максимальную высоту для данного временного слота
+                row_heights[time_idx] = max(row_heights[time_idx], cell_height)
+
+                worksheet.write(row_index + time_idx, day, combined_text, cell_format)
+            else:
+                item = items[0]
+                lesson_text = format_lesson_cell(item, type)
+                lesson_format = get_lesson_format(item.lesson_type)
+
+                # Оцениваем необходимую высоту на основе текста
+                cell_height = estimate_row_height(lesson_text, chars_per_line=30)  # 30 символов на строку
+
+                # Обновляем максимальную высоту для данного временного слота
+                row_heights[time_idx] = max(row_heights[time_idx], cell_height)
+
+                worksheet.write(row_index + time_idx, day, lesson_text, lesson_format)
+
+        # Устанавливаем адаптивную высоту строк
+        for idx, height in row_heights.items():
+            worksheet.set_row(row_index + idx, height)
+
+        workbook.close()
+
+        # Подготавливаем файл для отправки
+        output.seek(0)
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f"{type}_{id}_schedule_{semester}_{week}.xlsx"
+        )
+
+    except Exception as e:
+        # Логируем ошибку
+        app.logger.error(f"Ошибка при экспорте расписания: {str(e)}")
+        return jsonify({'message': f'Произошла ошибка при экспорте расписания: {str(e)}'}), 500
 
 
 # CRUD для расписания (требуется авторизация)
@@ -1285,6 +1494,17 @@ def find_optimal_time(current_user):
     except Exception as e:
         return jsonify({'message': f'Ошибка при поиске оптимального времени: {str(e)}'}), 500
 
+
+@app.route('/api/schedule/by-date/<date>', methods=['GET'])
+def get_schedule_by_date(date):
+    try:
+        date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+        # Ищем занятия с этой датой
+        schedule_items = Schedule.query.filter_by(date=date_obj).all()
+
+        return jsonify([item.to_dict() for item in schedule_items]), 200
+    except Exception as e:
+        return jsonify({'message': f'Ошибка: {str(e)}'}), 500
 
 @app.route('/api/schedule/all_conflicts', methods=['GET'])
 @token_required
