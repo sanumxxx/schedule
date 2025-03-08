@@ -31,6 +31,14 @@ export const scheduleApi = {
   getTeachers: (search = '') => {
     return api.get(`/teachers?search=${encodeURIComponent(search)}`);
   },
+  uploadSchedule: (formData, config = {}) => {
+    return api.post('/schedule/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      ...config
+    });
+  },
 
   // Получение списка аудиторий с поиском
   getAuditories: (search = '') => {
@@ -70,6 +78,48 @@ export const scheduleApi = {
     return api.put(`/schedule/${id}`, data);
   },
 
+  swapLessons: (lesson1Id, lesson2Id, swapLocations = false, forceSwap = false) => {
+    return api.post('/schedule/swap', {
+      lesson1_id: lesson1Id,
+      lesson2_id: lesson2Id,
+      swap_locations: swapLocations,
+      force_swap: forceSwap
+    });
+  },
+
+  // New method for getting detailed conflict information
+  getConflictDetails: (date, timeStart, timeEnd) => {
+    return api.post('/schedule/conflicts', {
+      date: date,
+      time_start: timeStart,
+      time_end: timeEnd
+    });
+  },
+
+  getAllConflicts: (semester, week) => {
+    return api.get(`/schedule/all_conflicts?semester=${semester}&week=${week}`);
+  },
+
+  getConflicts: (date, timeStart, timeEnd) => {
+    return api.post('/schedule/conflicts', {
+      date: date,
+      time_start: timeStart,
+      time_end: timeEnd
+    });
+  },
+
+  moveGroupLessons: (params, forceMove = false) => {
+    return api.post('/schedule/group_move', {
+      ...params,
+      force_move: forceMove
+    });
+  },
+
+  // New method for resolving conflicts
+  resolveConflict: (conflictData) => {
+    return api.post('/schedule/resolve_conflict', conflictData);
+  },
+
   deleteScheduleItem: (id) => {
     return api.delete(`/schedule/${id}`);
   },
@@ -86,17 +136,34 @@ export const scheduleApi = {
     });
   },
   checkAvailability: (params) => {
-  return api.post('/schedule/check_availability', params);
-},
-  uploadSchedule: (formData, config = {}) => {
-    return api.post('/schedule/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-      ...config
+    return api.post('/schedule/check_availability', params);
+  },
+
+  findOptimalTime: (lessonId, semester, week) => {
+    return api.post('/schedule/find_optimal_time', {
+      lesson_id: lessonId,
+      semester: semester,
+      week_number: week
+    });
+  },
+
+  // Получение статистики загруженности
+  getUsageStats: (semester, week) => {
+    return api.get(`/schedule/usage_stats?semester=${semester}&week=${week}`);
+  },
+
+  // Обновление с принудительной заменой
+  forceUpdateScheduleItem: (id, data) => {
+    return api.put(`/schedule/${id}`, {
+      ...data,
+      force_update: true
     });
   }
 };
+
+
+
+
 
 // API для работы с пользователями и авторизацией
 export const authApi = {

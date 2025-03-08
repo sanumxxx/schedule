@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import {
   Button,
@@ -53,6 +53,22 @@ const EmptyMessage = styled.div`
   color: ${colors.gray};
 `;
 
+const AlertBox = styled.div`
+  padding: 10px 16px;
+  border-radius: 8px;
+  background-color: ${props => props.type === 'error' ? '#FFEAEF' : '#E3F9E5'};
+  border: 1px solid ${props => props.type === 'error' ? '#FFAFBF' : '#A1E5A5'};
+  color: ${props => props.type === 'error' ? '#B30021' : '#1E7F24'};
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  
+  svg {
+    margin-right: 10px;
+    min-width: 16px;
+  }
+`;
+
 // Вспомогательные функции
 // Определение текущего семестра на основе даты
 const getCurrentSemester = () => {
@@ -75,21 +91,38 @@ const getCurrentSemester = () => {
 // Определение текущей учебной недели
 const getCurrentWeek = (semester) => {
   const now = new Date();
-  const year = now.getFullYear();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  let year = currentYear;
   let startDate;
+
+  // Определение учебного года
+  if (semester === 1 && currentMonth >= 9) {
+    // Первый семестр текущего учебного года (осень)
+    year = currentYear;
+  } else if (semester === 1 && currentMonth < 9) {
+    // Первый семестр прошлого учебного года
+    year = currentYear - 1;
+  } else if (semester === 2 && currentMonth >= 2 && currentMonth <= 8) {
+    // Второй семестр текущего учебного года (весна)
+    year = currentYear;
+  } else if (semester === 2 && (currentMonth === 1 || currentMonth === 12)) {
+    // Второй семестр следующего учебного года
+    year = currentMonth === 1 ? currentYear : currentYear + 1;
+  }
 
   // Примерные даты начала семестров
   if (semester === 1) {
-    // Первый семестр обычно начинается 1 сентября
+    // Первый семестр начинается 1 сентября
     startDate = new Date(year, 8, 1); // Месяцы в JS от 0 до 11, где 8 = сентябрь
-
-    // Если текущая дата до 1 сентября, значит имеется в виду прошлый год
-    if (now < startDate) {
-      startDate = new Date(year - 1, 8, 1);
-    }
   } else {
-    // Второй семестр обычно начинается в начале февраля
+    // Второй семестр начинается в начале февраля
     startDate = new Date(year, 1, 10); // 10 февраля примерно
+  }
+
+  // Если текущая дата до начала семестра, возвращаем 1 неделю
+  if (now < startDate) {
+    return 1;
   }
 
   // Вычисляем разницу в днях и делим на 7, чтобы получить номер недели
@@ -97,36 +130,75 @@ const getCurrentWeek = (semester) => {
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   const weekNumber = Math.floor(diffDays / 7) + 1;
 
-  // Ограничиваем номер недели 18 (максимальное кол-во недель в семестре)
-  return Math.min(weekNumber, 18);
+  return weekNumber;
+};
+
+// Функция для создания URL с актуальными параметрами
+const generateScheduleUrl = (type, id, semester, week) => {
+  return `/schedule/${type}/${encodeURIComponent(id)}/${semester}/${week}`;
 };
 
 const SchedulePage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { type, id, semester: semesterParam, week: weekParam } = useParams();
-  const [semester, setSemester] = useState(semesterParam ? parseInt(semesterParam) : getCurrentSemester());
-  const [week, setWeek] = useState(weekParam ? parseInt(weekParam) : 1);
+
+  // Просто парсим параметры URL без валидации
+  const parsedSemester = semesterParam && !isNaN(parseInt(semesterParam)) ? parseInt(semesterParam) : 0;
+  const parsedWeek = weekParam && !isNaN(parseInt(weekParam)) ? parseInt(weekParam) : 0;
+
+  // Устанавливаем состояние точно по URL без автокоррекции
+  const [semester, setSemester] = useState(parsedSemester || getCurrentSemester());
+  const [week, setWeek] = useState(parsedWeek || getCurrentWeek(parsedSemester || getCurrentSemester()));
   const [schedule, setSchedule] = useState([]);
   const [dates, setDates] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const [availableWeeks, setAvailableWeeks] = useState([]);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [loadingWeeks, setLoadingWeeks] = useState(false);
 
   // Проверка авторизации пользователя
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      setIsLoggedIn(true);
-      setUserRole(user.role);
+      try {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        setIsLoggedIn(true);
+        setUserRole(user.role);
+      } catch (err) {
+        console.error('Ошибка при чтении данных пользователя:', err);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setIsLoggedIn(false);
+        setUserRole(null);
+      }
     } else {
       setIsLoggedIn(false);
       setUserRole(null);
     }
   }, []);
+
+  // Эффект для отслеживания изменений URL
+  useEffect(() => {
+    if (semesterParam && weekParam) {
+      const urlSemester = parseInt(semesterParam);
+      const urlWeek = parseInt(weekParam);
+
+      // Обновляем состояние, если URL изменился
+      if (urlSemester !== semester) {
+        setSemester(urlSemester);
+        // При смене семестра нужно заново загрузить доступные недели
+        fetchAvailableWeeks(urlSemester);
+      }
+      if (urlWeek !== week) {
+        setWeek(urlWeek);
+      }
+    }
+  }, [semesterParam, weekParam, location.pathname]);
 
   // Проверка, может ли пользователь редактировать расписание
   const canEditSchedule = isLoggedIn && (userRole === 'admin' || userRole === 'editor');
@@ -137,9 +209,57 @@ const SchedulePage = () => {
                    'аудитории';
 
   // Декодирование ID из URL
-  const decodedId = decodeURIComponent(id);
+  const decodedId = decodeURIComponent(id || '');
 
-  // Функция загрузки расписания (выделена для повторного использования)
+  // Функция для получения доступных недель
+  const fetchAvailableWeeks = useCallback(async (sem) => {
+    setLoadingWeeks(true);
+    try {
+      // Здесь нужно вызвать API для получения списка доступных недель для семестра
+      // Поскольку такого метода может не быть, мы можем:
+      // 1. Либо добавить его в API и на бэкенде
+      // 2. Либо использовать временное решение - определять по существующему расписанию
+
+      // Для примера, предположим, что у нас есть метод для получения доступных недель:
+      // const response = await scheduleApi.getAvailableWeeks(sem);
+      // const weeks = response.data || [];
+
+      // Временное решение - генерируем список недель вокруг текущей
+      const currentWeek = parseInt(weekParam) || getCurrentWeek(sem);
+
+      // Создаем массив недель, включая текущую и +/- 5 недель (если семестр 1)
+      // или +/- 10 недель (если семестр 2), с учетом текущей из URL
+      let weeks = [];
+
+      // Добавляем недели из запроса, если она не в нашем списке
+      if (currentWeek && !weeks.includes(currentWeek)) {
+        weeks.push(currentWeek);
+      }
+
+      // Для 1 семестра обычно недели 1-18, для 2 семестра - недели 18-36
+      if (sem === 1) {
+        weeks = Array.from({ length: 18 }, (_, i) => i + 1);
+      } else {
+        weeks = Array.from({ length: 18 }, (_, i) => i + 18);
+      }
+
+      // Сортируем и удаляем дубликаты
+      weeks = [...new Set(weeks)].sort((a, b) => a - b);
+
+      setAvailableWeeks(weeks);
+    } catch (err) {
+      console.error('Ошибка при получении доступных недель:', err);
+      // Запасной вариант - генерируем базовый список недель
+      const currentWeek = parseInt(weekParam) || getCurrentWeek(sem);
+      const maxWeek = sem === 1 ? 18 : 36;
+      const weeks = Array.from({ length: maxWeek }, (_, i) => i + 1);
+      setAvailableWeeks(weeks);
+    } finally {
+      setLoadingWeeks(false);
+    }
+  }, [weekParam]);
+
+  // Функция загрузки расписания
   const loadSchedule = useCallback(async (itemId, sem, wk) => {
     setLoading(true);
     setError(null);
@@ -165,6 +285,9 @@ const SchedulePage = () => {
       setSchedule(response.data.schedule || []);
       setDates(response.data.dates || {});
 
+      // После успешной загрузки, можно обновить информацию о доступных неделях
+      // на основе полученных данных (если используете временное решение)
+
       return response.data.schedule || [];
     } catch (err) {
       console.error('Ошибка при загрузке расписания:', err);
@@ -175,57 +298,75 @@ const SchedulePage = () => {
     }
   }, [type]);
 
-  // При первом рендере проверяем, установлены ли семестр и неделя
+  // Загрузка начальных данных при монтировании компонента
   useEffect(() => {
-    // Если семестр или неделя не установлены, используем текущие значения
-    if (semester === 0 || week === 0) {
+    if (decodedId && semester > 0 && week > 0) {
+      loadSchedule(decodedId, semester, week);
+      fetchAvailableWeeks(semester);
+    } else if (decodedId) {
+      // Если не заданы параметры, используем текущие значения
       const currentSemester = getCurrentSemester();
       const currentWeek = getCurrentWeek(currentSemester);
 
-      // Перенаправляем пользователя на URL с текущим семестром и неделей
-      if (id) {
-        navigate(`/schedule/${type}/${id}/${currentSemester}/${currentWeek}`, { replace: true });
+      setSemester(currentSemester);
+      setWeek(currentWeek);
 
-        // Если передана функция для загрузки расписания, вызываем ее
-        if (loadSchedule) {
-          loadSchedule(id, currentSemester, currentWeek);
-        }
-      }
+      // Обновляем URL и загружаем данные
+      navigate(generateScheduleUrl(type, id, currentSemester, currentWeek), { replace: true });
+      loadSchedule(decodedId, currentSemester, currentWeek);
+      fetchAvailableWeeks(currentSemester);
     }
-  }, [semester, week, type, id, navigate, loadSchedule]);
-
-  // Инициализация начальных данных
-  useEffect(() => {
-    const initializeSchedule = async () => {
-      if (decodedId) {
-        await loadSchedule(decodedId, semester, week);
-      }
-    };
-
-    initializeSchedule();
-  }, [decodedId, semester, week, loadSchedule]);
+  }, [decodedId, type, id, navigate, loadSchedule, fetchAvailableWeeks]);
 
   // Обработчик изменения семестра
   const handleSemesterChange = (e) => {
     const newSemester = parseInt(e.target.value);
+    // Обновляем состояние
     setSemester(newSemester);
-    navigate(`/schedule/${type}/${id}/${newSemester}/${week}`, { replace: true });
+
+    // Загружаем доступные недели для нового семестра
+    fetchAvailableWeeks(newSemester);
+
+    // Выбираем первую доступную неделю из нового семестра
+    // или сохраняем текущую, если она попадает в диапазон нового семестра
+    let newWeek = week;
+    if (newSemester === 1 && week > 18) {
+      newWeek = 1;
+    } else if (newSemester === 2 && week < 19) {
+      newWeek = 19;
+    }
+
+    setWeek(newWeek);
+
+    // Обновляем URL и загружаем данные
+    navigate(generateScheduleUrl(type, id, newSemester, newWeek), { replace: true });
+    loadSchedule(decodedId, newSemester, newWeek);
   };
 
   // Обработчик изменения недели
   const handleWeekChange = (e) => {
     const newWeek = parseInt(e.target.value);
+    // Обновляем состояние
     setWeek(newWeek);
-    navigate(`/schedule/${type}/${id}/${semester}/${newWeek}`, { replace: true });
+    // Обновляем URL
+    navigate(generateScheduleUrl(type, id, semester, newWeek), { replace: true });
+    // Загружаем новые данные
+    loadSchedule(decodedId, semester, newWeek);
   };
 
   // Обработчик экспорта в Excel
   const handleExportToExcel = async () => {
+    setExporting(true);
     try {
       await scheduleApi.exportToExcel(type, decodedId, semester, week);
+      setSuccess('Расписание успешно экспортировано');
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       console.error('Ошибка при экспорте расписания:', err);
-      alert('Произошла ошибка при экспорте расписания. Пожалуйста, попробуйте снова.');
+      setError('Произошла ошибка при экспорте расписания. Пожалуйста, попробуйте снова.');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -233,6 +374,28 @@ const SchedulePage = () => {
   const handleBack = () => {
     navigate('/');
   };
+
+  // Обработчик для быстрой установки текущей недели
+  const handleSetCurrentWeek = () => {
+    const currentSemester = getCurrentSemester();
+    const currentWeek = getCurrentWeek(currentSemester);
+
+    // Обновляем состояния
+    setSemester(currentSemester);
+    setWeek(currentWeek);
+
+    // Обновляем URL и загружаем данные
+    navigate(generateScheduleUrl(type, id, currentSemester, currentWeek), { replace: true });
+    loadSchedule(decodedId, currentSemester, currentWeek);
+    fetchAvailableWeeks(currentSemester);
+  };
+
+  // Отфильтрованный список недель для отображения в селекторе
+  const filteredWeeks = loadingWeeks
+    ? []
+    : availableWeeks.length > 0
+      ? availableWeeks
+      : (semester === 1 ? Array.from({ length: 18 }, (_, i) => i + 1) : Array.from({ length: 18 }, (_, i) => i + 18));
 
   return (
     <PageContainer>
@@ -246,13 +409,34 @@ const SchedulePage = () => {
         Назад
       </Button>
 
+      {success && (
+        <AlertBox>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          {success}
+        </AlertBox>
+      )}
+
+      {error && !loading && (
+        <AlertBox type="error">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          {error}
+        </AlertBox>
+      )}
+
       <Card style={{marginBottom: '16px', padding: '16px'}}>
         <h1 style={{fontSize: '20px', marginBottom: '16px'}}>Расписание {typeLabel} {decodedId}</h1>
         <Row>
           <Column>
             <FormGroup>
               <label>Семестр</label>
-              <Select value={semester} onChange={handleSemesterChange}>
+              <Select value={semester} onChange={handleSemesterChange} disabled={loading}>
                 <option value={1}>1 семестр</option>
                 <option value={2}>2 семестр</option>
               </Select>
@@ -261,23 +445,63 @@ const SchedulePage = () => {
           <Column>
             <FormGroup>
               <label>Неделя</label>
-              <Select value={week} onChange={handleWeekChange}>
-                {Array.from({ length: 18 }, (_, i) => i + 1).map(num => (
-                  <option key={num} value={num}>{num} неделя</option>
-                ))}
-              </Select>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Select value={week} onChange={handleWeekChange} disabled={loading || loadingWeeks} style={{ flex: 1 }}>
+                  {loadingWeeks ? (
+                    <option value={week}>Загрузка недель...</option>
+                  ) : (
+                    // Показываем только недели из списка доступных
+                    filteredWeeks.map(num => (
+                      <option key={num} value={num}>{num} неделя</option>
+                    ))
+                  )}
+                  {/* Если текущей недели нет в списке, добавляем её отдельно */}
+                  {!loadingWeeks && !filteredWeeks.includes(week) && (
+                    <option value={week}>{week} неделя</option>
+                  )}
+                </Select>
+                <Button
+                  onClick={handleSetCurrentWeek}
+                  secondary
+                  disabled={loading || loadingWeeks}
+                  style={{padding: '8px 12px', fontSize: '13px'}}
+                >
+                  Текущая
+                </Button>
+              </div>
             </FormGroup>
           </Column>
           <Column>
             <FormGroup>
               <label>&nbsp;</label>
-              <Button onClick={handleExportToExcel} style={{display: 'flex', alignItems: 'center'}}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '8px'}}>
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                Экспорт в Excel
+              <Button
+                onClick={handleExportToExcel}
+                style={{display: 'flex', alignItems: 'center'}}
+                disabled={loading || exporting}
+              >
+                {exporting ? (
+                  <>
+                    <div style={{
+                      width: '14px',
+                      height: '14px',
+                      border: '2px solid rgba(255,255,255,0.2)',
+                      borderTop: '2px solid white',
+                      borderRadius: '50%',
+                      marginRight: '8px',
+                      animation: 'spin 1s linear infinite'
+                    }}></div>
+                    Экспорт...
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '8px'}}>
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Экспорт в Excel
+                  </>
+                )}
               </Button>
             </FormGroup>
           </Column>
@@ -325,7 +549,7 @@ const SchedulePage = () => {
             dates={dates}
             view={type}
             loadSchedule={loadSchedule}
-            isEditable={canEditSchedule} // Передаем флаг, указывающий на возможность редактирования
+            isEditable={canEditSchedule}
           />
         )}
       </ScheduleWrapper>
