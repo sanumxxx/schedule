@@ -1,3 +1,5 @@
+// Обновленный компонент Header.jsx с добавлением ссылки на страницу отчетов
+
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import styled from 'styled-components';
@@ -198,6 +200,8 @@ const Header = ({ isLoggedIn = false, userRole = null }) => {
 
       {/* Десктопная навигация */}
       <DesktopNav>
+        <NavLink to="/reports">Отчеты</NavLink>
+
         {isLoggedIn && (userRole === 'admin' || userRole === 'editor') && (
           <NavLink to="/admin">Администрирование</NavLink>
         )}
@@ -217,6 +221,10 @@ const Header = ({ isLoggedIn = false, userRole = null }) => {
       </MobileMenuToggle>
 
       <MobileMenu isOpen={isMenuOpen}>
+        <MobileNavLink to="/reports" onClick={closeMenu}>
+          Отчеты
+        </MobileNavLink>
+
         {isLoggedIn && (userRole === 'admin' || userRole === 'editor') && (
           <MobileNavLink to="/admin" onClick={closeMenu}>
             Администрирование

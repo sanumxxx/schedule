@@ -7,6 +7,8 @@ import HomePage from './components/pages/HomePage';
 import SchedulePage from './components/pages/SchedulePage';
 import LoginPage from './components/pages/LoginPage';
 import AdminPage from './components/pages/AdminPage';
+import ReportsListPage from './components/pages/ReportsListPage'; // Импортируем компонент списка отчетов
+import DisciplineLessonsReport from './components/pages/DisciplineLessonsReport'; // Импортируем компонент отчета по дисциплине
 
 // Global styles
 const GlobalStyle = createGlobalStyle`
@@ -46,6 +48,8 @@ function App() {
           <Route path="/schedule/:type/:id/:semester/:week" element={<SchedulePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/admin/*" element={<AdminPage />} />
+          <Route path="/reports" element={<ReportsListPage />} /> {/* Главная страница отчетов */}
+          <Route path="/reports/discipline-lessons" element={<DisciplineLessonsReport />} /> {/* Отчет "Занятия по дисциплине" */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppContainer>
