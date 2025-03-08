@@ -1,10 +1,10 @@
-import React, {useEffect, useState} from 'react';
-import {useNavigate, useParams} from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
-import {format} from 'date-fns';
-import {ru} from 'date-fns/locale';
-import {colors} from './StyledComponents';
-import {scheduleApi, timeSlotsApi} from '../../api/api';
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
+import { colors } from './StyledComponents';
+import { scheduleApi, timeSlotsApi } from '../../api/api';
 import ReactDOM from 'react-dom';
 
 // Стилизованные компоненты
@@ -15,7 +15,6 @@ const ScheduleContainer = styled.div`
     padding-bottom: 12px;
 
     /* iOS-style scrollbar */
-
     &::-webkit-scrollbar {
         height: 8px;
     }
@@ -433,16 +432,14 @@ const ActionButton = styled.button`
     }
 `;
 
-// Контекстное меню действий
-const ActionMenu = styled.div`
-    position: fixed; /* Изменено с absolute на fixed для позиционирования относительно окна */
+// Контекстное меню действий (стили для всплывающего меню)
+const MenuWrapper = styled.div`
     background: white;
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    display: ${props => props.visible ? 'block' : 'none'};
     overflow: hidden;
-    z-index: 1000; /* Увеличен z-index, чтобы меню было поверх всех элементов */
     min-width: 170px;
+    z-index: 1100;
 `;
 
 const MenuItem = styled.div`
@@ -726,6 +723,43 @@ const DragHandleIcon = styled.div`
     }
 `;
 
+// Компонент ActionMenuPortal - правильная реализация портала
+const ActionMenuPortal = ({ children, isOpen, position, onClose }) => {
+    // Если меню закрыто, не рендерим ничего
+    if (!isOpen) return null;
+
+    // Создаем портал, который рендерит содержимое прямо в body
+    return ReactDOM.createPortal(
+        <div>
+            {/* Прозрачная подложка для отслеживания кликов вне меню */}
+            <div
+                style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 1090
+                }}
+                onClick={onClose}
+            />
+            {/* Само меню */}
+            <MenuWrapper
+                style={{
+                    position: 'fixed',
+                    top: position.top + 'px',
+                    left: position.left + 'px',
+                    zIndex: 1100
+                }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                {children}
+            </MenuWrapper>
+        </div>,
+        document.body
+    );
+};
+
 // Вспомогательные функции и константы
 // Функция для получения более темного цвета
 const getDarkerColor = (color) => {
@@ -807,11 +841,16 @@ const WEEKDAYS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const WEEKDAYS_FULL = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
 
 // Фолбэк для временных слотов, если не удастся загрузить из API
-const DEFAULT_LESSON_TIMES = [{start: '08:00', end: '09:20'}, {start: '09:30', end: '10:50'}, {
-    start: '11:00', end: '12:20'
-}, {start: '12:40', end: '14:00'}, {start: '14:10', end: '15:30'}, {start: '15:40', end: '17:00'}, {
-    start: '17:10', end: '18:30'
-}, {start: '18:40', end: '20:00'}];
+const DEFAULT_LESSON_TIMES = [
+    {start: '08:00', end: '09:20'},
+    {start: '09:30', end: '10:50'},
+    {start: '11:00', end: '12:20'},
+    {start: '12:40', end: '14:00'},
+    {start: '14:10', end: '15:30'},
+    {start: '15:40', end: '17:00'},
+    {start: '17:10', end: '18:30'},
+    {start: '18:40', end: '20:00'}
+];
 
 // Функция для форматирования даты
 const formatDate = (dateString) => {
@@ -823,43 +862,6 @@ const formatDate = (dateString) => {
         console.error('Error formatting date:', e);
         return dateString;
     }
-};
-
-const ActionMenuPortal = ({ isOpen, position, onClose, children }) => {
-  if (!isOpen) return null;
-
-  // Создаем портал, который рендерит содержимое в body, а не внутри родительского компонента
-  return ReactDOM.createPortal(
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 999
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: position.top + 'px',
-          left: position.left + 'px',
-          background: 'white',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-          borderRadius: '12px',
-          minWidth: '170px',
-          overflow: 'hidden',
-          zIndex: 1000
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>,
-    document.body
-  );
 };
 
 // Функция для полного форматирования даты
@@ -898,43 +900,6 @@ const getLessonTypeColor = (type) => {
         'зач.': '#E9F5FA',   // Зачёт - голубой в стиле Apple
         'зачет': '#E9F5FA', 'зачёт': '#E9F5FA'
     };
-
-    const ActionMenuPortal = ({ isOpen, position, onClose, children }) => {
-  if (!isOpen) return null;
-
-  // Создаем портал, который рендерит содержимое в body, а не внутри родительского компонента
-  return ReactDOM.createPortal(
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 999
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: position.top + 'px',
-          left: position.left + 'px',
-          background: 'white',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-          borderRadius: '12px',
-          minWidth: '170px',
-          overflow: 'hidden',
-          zIndex: 1000
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>,
-    document.body
-  );
-};
 
     const normalizedType = type ? type.toLowerCase() : '';
 
@@ -1044,12 +1009,12 @@ const DragIcon = () => (
 
 // Компонент ScheduleTable
 const ScheduleTable = ({
-                           schedule = [],
-                           dates = {},
-                           view = 'group',
-                           loading = false,
-                           loadSchedule = null,
-                           isEditable = false
+                            schedule = [],
+                            dates = {},
+                            view = 'group',
+                            loading = false,
+                            loadSchedule = null,
+                            isEditable = false
                        }) => {
     const navigate = useNavigate();
     const params = useParams();
@@ -1059,9 +1024,9 @@ const ScheduleTable = ({
     const [timeSlots, setTimeSlots] = useState([]);
     const [timeSlotsLoading, setTimeSlotsLoading] = useState(true);
 
-    // Новые состояния для функциональности редактирования и управления конфликтами
+    // Состояния для функциональности редактирования и управления конфликтами
     const [actionMenuOpen, setActionMenuOpen] = useState(false);
-    const [actionMenuPosition, setActionMenuPosition] = useState({lessonId: null});
+    const [actionMenuPosition, setActionMenuPosition] = useState({top: 0, left: 0});
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [moveModalOpen, setMoveModalOpen] = useState(false);
     const [swapModalOpen, setSwapModalOpen] = useState(false);
@@ -1131,6 +1096,23 @@ const ScheduleTable = ({
         }
     }, [dates]);
 
+    // Добавляем обработчик для закрытия меню по клику вне его
+    useEffect(() => {
+        const handleClickOutside = () => {
+            setActionMenuOpen(false);
+        };
+
+        if (actionMenuOpen) {
+            // Добавляем обработчик только когда меню открыто
+            document.addEventListener('click', handleClickOutside);
+        }
+
+        return () => {
+            // Удаляем обработчик при размонтировании
+            document.removeEventListener('click', handleClickOutside);
+        };
+    }, [actionMenuOpen]);
+
     // Обработчик открытия модального окна с информацией
     const handleOpenModal = (lesson, e) => {
         if (e) e.stopPropagation();
@@ -1160,28 +1142,26 @@ const ScheduleTable = ({
         navigate(`/schedule/auditory/${encodeURIComponent(auditory)}/${semester || 1}/${week || 1}`);
     };
 
-    // Обработчик открытия меню действий
+    // Обработчик открытия меню действий с правильным позиционированием
     const handleOpenActionMenu = (e, lesson) => {
-  if (e) e.stopPropagation();
+        e.stopPropagation();
 
-  // Получение координат кнопки
-  const buttonRect = e.currentTarget.getBoundingClientRect();
+        // Получаем координаты кнопки относительно окна
+        const rect = e.currentTarget.getBoundingClientRect();
 
-  // Рассчитываем позицию меню (влево и вниз от кнопки)
-  setActionMenuPosition({
-    lessonId: lesson.id,
-    top: buttonRect.bottom,
-    left: buttonRect.left,  // Пусть меню будет слева от кнопки
-  });
+        // Рассчитываем позицию меню
+        const top = rect.bottom + window.scrollY;
+        const left = rect.left + window.scrollX;
 
-  setSelectedLesson(lesson); // Запоминаем текущий урок для операций
-  setActionMenuOpen(true);
-};
+        // Устанавливаем позицию меню
+        setActionMenuPosition({ top, left });
+        setSelectedLesson(lesson); // Сохраняем выбранное занятие
+        setActionMenuOpen(true);
+    };
 
     // Обработчик закрытия меню действий
     const handleCloseActionMenu = () => {
         setActionMenuOpen(false);
-        document.removeEventListener('click', handleCloseActionMenu);
     };
 
     // Обработчик редактирования
@@ -1232,7 +1212,7 @@ const ScheduleTable = ({
             setAvailableMoveOptions([]);
 
             // Получаем данные о доступности с проверкой конфликтов по всем параметрам
-            const availabilityResponse = await scheduleApi.checkDetailedAvailability({
+            const availabilityResponse = await scheduleApi.checkAvailability({
                 semester: semester,
                 week_number: week,
                 lesson_id: lesson.id,
@@ -1993,51 +1973,6 @@ const ScheduleTable = ({
                                                 <circle cx="5" cy="12" r="1"></circle>
                                             </svg>
                                         </ActionButton>)}
-
-                                        {/* Меню действий */}
-                                        {actionMenuOpen && selectedLesson && (
-  <ActionMenuPortal
-    isOpen={actionMenuOpen}
-    position={actionMenuPosition}
-    onClose={handleCloseActionMenu}
-  >
-    <MenuItem onClick={(e) => handleEdit(e, selectedLesson)}>
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-      </svg>
-      Редактировать
-    </MenuItem>
-    <MenuItem onClick={(e) => handleOpenMoveModal(e, selectedLesson)}>
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="5 9 2 12 5 15"></polyline>
-        <polyline points="9 5 12 2 15 5"></polyline>
-        <polyline points="15 19 12 22 9 19"></polyline>
-        <polyline points="19 9 22 12 19 15"></polyline>
-        <line x1="2" y1="12" x2="22" y2="12"></line>
-        <line x1="12" y1="2" x2="12" y2="22"></line>
-      </svg>
-      Перенести
-    </MenuItem>
-    <MenuItem onClick={(e) => handleOpenSwapModal(e, selectedLesson)}>
-      <SwapIcon />
-      Обменять
-    </MenuItem>
-    <MenuItem onClick={(e) => handleFindOptimalTime(e, selectedLesson)}>
-      <OptimalTimeIcon />
-      Найти оптимальное время
-    </MenuItem>
-    <MenuItem danger onClick={(e) => handleDelete(e, selectedLesson.id)}>
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="3 6 5 6 21 6"></polyline>
-        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-        <line x1="10" y1="11" x2="10" y2="17"></line>
-        <line x1="14" y1="11" x2="14" y2="17"></line>
-      </svg>
-      Удалить
-    </MenuItem>
-  </ActionMenuPortal>
-)}
                                     </ScheduleCell>);
                                 })) : (<ScheduleCell empty/>)}
                             </ScheduleCellWrapper>);
@@ -2045,6 +1980,49 @@ const ScheduleTable = ({
                     </React.Fragment>))}
                 </ScheduleGrid>
             </ScheduleContainer>
+
+            {/* Меню действий - используем портал */}
+            <ActionMenuPortal
+                isOpen={actionMenuOpen}
+                position={actionMenuPosition}
+                onClose={handleCloseActionMenu}
+            >
+                <MenuItem onClick={(e) => handleEdit(e, selectedLesson)}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    Редактировать
+                </MenuItem>
+                <MenuItem onClick={(e) => handleOpenMoveModal(e, selectedLesson)}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="5 9 2 12 5 15"></polyline>
+                        <polyline points="9 5 12 2 15 5"></polyline>
+                        <polyline points="15 19 12 22 9 19"></polyline>
+                        <polyline points="19 9 22 12 19 15"></polyline>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <line x1="12" y1="2" x2="12" y2="22"></line>
+                    </svg>
+                    Перенести
+                </MenuItem>
+                <MenuItem onClick={(e) => handleOpenSwapModal(e, selectedLesson)}>
+                    <SwapIcon />
+                    Обменять
+                </MenuItem>
+                <MenuItem onClick={(e) => handleFindOptimalTime(e, selectedLesson)}>
+                    <OptimalTimeIcon />
+                    Найти оптимальное время
+                </MenuItem>
+                <MenuItem danger onClick={(e) => handleDelete(e, selectedLesson.id)}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        <line x1="10" y1="11" x2="10" y2="17"></line>
+                        <line x1="14" y1="11" x2="14" y2="17"></line>
+                    </svg>
+                    Удалить
+                </MenuItem>
+            </ActionMenuPortal>
 
             {/* Модальное окно с подробной информацией */}
             {modalOpen && selectedLesson && (<ModalOverlay onClick={handleCloseModal}>
@@ -2056,7 +2034,7 @@ const ScheduleTable = ({
 
                         <ModalRow>
                             <ModalLabel>Тип занятия</ModalLabel>
-                            <ModalValue>
+                <ModalValue>
                                 {selectedLesson.lesson_type}
                                 {selectedLesson.subgroup > 0 && ` (Подгруппа ${selectedLesson.subgroup})`}
                             </ModalValue>
@@ -2090,6 +2068,7 @@ const ScheduleTable = ({
                                 </ClickableInfo>
                             </ModalValue>
                         </ModalRow>) : null}
+
                         {selectedLesson.teacher_name && (<ModalRow>
                             <ModalLabel>Преподаватель</ModalLabel>
                             <ModalValue>
@@ -2099,6 +2078,7 @@ const ScheduleTable = ({
                                 </ClickableInfo>
                             </ModalValue>
                         </ModalRow>)}
+
                         {/* Показываем аудитории */}
                         {selectedLesson.auditories?.length > 0 ? (<ModalRow>
                             <ModalLabel>Аудитории</ModalLabel>
@@ -2118,10 +2098,12 @@ const ScheduleTable = ({
                                 </ClickableInfo>
                             </ModalValue>
                         </ModalRow>) : null}
+
                         {selectedLesson.faculty && (<ModalRow>
                             <ModalLabel>Факультет</ModalLabel>
                             <ModalValue>{selectedLesson.faculty}</ModalValue>
                         </ModalRow>)}
+
                         <ModalRow>
                             <ModalLabel>Семестр / Неделя / Курс</ModalLabel>
                             <ModalValue>
@@ -2137,9 +2119,9 @@ const ScheduleTable = ({
                                     <ConflictIcon style={{marginRight: '8px'}}/>
                                     <span>Обнаружены конфликты с другими занятиями</span>
                                 </div>
-                                {/ Здесь можно добавить подробную информацию о конфликтах */}
                             </ModalValue>
                         </ModalRow>)}
+
                         {/* Кнопки действий для авторизованных пользователей */}
                         {isEditable && (<ButtonRow>
                             <ActionModalButton
@@ -2164,475 +2146,753 @@ const ScheduleTable = ({
                         </ButtonRow>)}
                     </ModalContent>
                 </ModalOverlay>)}
-            {/* Модальное окно для редактирования/создания занятия */}
-            {editModalOpen && (<ModalOverlay onClick={() => setEditModalOpen(false)}>
-                <EditModal onClick={(e) => e.stopPropagation()}>
-                    <ModalHeader>
-                        <ModalTitle>
-                            {selectedLesson ? 'Редактирование занятия' : 'Создание нового занятия'}
-                        </ModalTitle>
-                        <CloseButton onClick={() => setEditModalOpen(false)}>×</CloseButton>
-                    </ModalHeader><TabRow>
-                    {selectedLesson && (<Tab
-                        active={activeTab === 'info'}
-                        onClick={() => setActiveTab('info')}
-                    >
-                        Информация
-                    </Tab>)}
-                    <Tab
-                        active={activeTab === 'edit'}
-                        onClick={() => setActiveTab('edit')}
-                    >
-                        {selectedLesson ? 'Редактирование' : 'Создание'}
-                    </Tab>
-                </TabRow>
 
-                    {activeTab === 'info' && selectedLesson && (<div>
-                        <ModalRow>
-                            <ModalLabel>Предмет</ModalLabel>
-                            <ModalValue>{selectedLesson.subject}</ModalValue>
-                        </ModalRow>
+            {/* Модальное окно для редактирования занятия */}
+            {editModalOpen && (
+                <ModalOverlay onClick={() => setEditModalOpen(false)}>
+                    <EditModal onClick={(e) => e.stopPropagation()}>
+                        <ModalHeader>
+                            <ModalTitle>
+                                {selectedLesson ? 'Редактирование занятия' : 'Создание нового занятия'}
+                            </ModalTitle>
+                            <CloseButton onClick={() => setEditModalOpen(false)}>×</CloseButton>
+                        </ModalHeader>
 
-                        <ModalRow>
-                            <ModalLabel>Тип занятия</ModalLabel>
-                            <ModalValue>
-                                {selectedLesson.lesson_type}
-                                {selectedLesson.subgroup > 0 && ` (Подгруппа ${selectedLesson.subgroup})`}
-                            </ModalValue>
-                        </ModalRow>
-
-                        <ModalRow>
-                            <ModalLabel>Дата и время</ModalLabel>
-                            <ModalValue>
-                                {formatFullDate(selectedLesson.date)}, {WEEKDAYS_FULL[selectedLesson.weekday]}
-                                <br/>
-                                {selectedLesson.time_start} - {selectedLesson.time_end}
-                            </ModalValue>
-                        </ModalRow>
-
-                        <ModalRow>
-                            <ModalLabel>Группа</ModalLabel>
-                            <ModalValue>{selectedLesson.group_name || '-'}</ModalValue>
-                        </ModalRow>
-
-                        <ModalRow>
-                            <ModalLabel>Преподаватель</ModalLabel>
-                            <ModalValue>{selectedLesson.teacher_name || '-'}</ModalValue>
-                        </ModalRow>
-
-                        <ModalRow>
-                            <ModalLabel>Аудитория</ModalLabel>
-                            <ModalValue>{selectedLesson.auditory || '-'}</ModalValue>
-                        </ModalRow>
-                    </div>)}
-
-                    {activeTab === 'edit' && (<form onSubmit={selectedLesson ? handleSaveEdit : handleCreateNewLesson}>
-                        <FormGroup>
-                            <label htmlFor="subject">Предмет *</label>
-                            <input
-                                type="text"
-                                id="subject"
-                                name="subject"
-                                value={editFormData.subject || ''}
-                                onChange={handleEditFormChange}
-                                required
-                            />
-                        </FormGroup>
-
-                        <div style={{display: 'flex', gap: '16px'}}>
-                            <FormGroup style={{flex: 1}}>
-                                <label htmlFor="lesson_type">Тип занятия</label>
-                                <select
-                                    id="lesson_type"
-                                    name="lesson_type"
-                                    value={editFormData.lesson_type || 'лек.'}
-                                    onChange={handleEditFormChange}
+                        <TabRow>
+                            {selectedLesson && (
+                                <Tab
+                                    active={activeTab === 'info'}
+                                    onClick={() => setActiveTab('info')}
                                 >
-                                    <option value="лек.">Лекция</option>
-                                    <option value="пр.">Практика</option>
-                                    <option value="лаб.">Лабораторная</option>
-                                    <option value="сем.">Семинар</option>
-                                    <option value="конс.">Консультация</option>
-                                    <option value="экз.">Экзамен</option>
-                                    <option value="зач.">Зачёт</option>
-                                </select>
-                            </FormGroup>
+                                    Информация
+                                </Tab>
+                            )}
+                            <Tab
+                                active={activeTab === 'edit'}
+                                onClick={() => setActiveTab('edit')}
+                            >
+                                {selectedLesson ? 'Редактирование' : 'Создание'}
+                            </Tab>
+                        </TabRow>
 
-                            <FormGroup style={{flex: 1}}>
-                                <label htmlFor="subgroup">Подгруппа</label>
-                                <select
-                                    id="subgroup"
-                                    name="subgroup"
-                                    value={editFormData.subgroup || 0}
-                                    onChange={handleEditFormChange}
-                                >
-                                    <option value={0}>Общая</option>
-                                    <option value={1}>Подгруппа 1</option>
-                                    <option value={2}>Подгруппа 2</option>
-                                    <option value={3}>Подгруппа 3</option>
-                                </select>
-                            </FormGroup>
+                        {activeTab === 'info' && selectedLesson && (
+                            <div>
+                                <ModalRow>
+                                    <ModalLabel>Предмет</ModalLabel>
+                                    <ModalValue>{selectedLesson.subject}</ModalValue>
+                                </ModalRow>
+
+                                <ModalRow>
+                                    <ModalLabel>Тип занятия</ModalLabel>
+                                    <ModalValue>
+                                        {selectedLesson.lesson_type}
+                                        {selectedLesson.subgroup > 0 && ` (Подгруппа ${selectedLesson.subgroup})`}
+                                    </ModalValue>
+                                </ModalRow>
+
+                                <ModalRow>
+                                    <ModalLabel>Дата и время</ModalLabel>
+                                    <ModalValue>
+                                        {formatFullDate(selectedLesson.date)}, {WEEKDAYS_FULL[selectedLesson.weekday]}
+                                        <br/>
+                                        {selectedLesson.time_start} - {selectedLesson.time_end}
+                                    </ModalValue>
+                                </ModalRow>
+
+                                <ModalRow>
+                                    <ModalLabel>Группа</ModalLabel>
+                                    <ModalValue>{selectedLesson.group_name || '-'}</ModalValue>
+                                </ModalRow>
+
+                                <ModalRow>
+                                    <ModalLabel>Преподаватель</ModalLabel>
+                                    <ModalValue>{selectedLesson.teacher_name || '-'}</ModalValue>
+                                </ModalRow>
+
+                                <ModalRow>
+                                    <ModalLabel>Аудитория</ModalLabel>
+                                    <ModalValue>{selectedLesson.auditory || '-'}</ModalValue>
+                                </ModalRow>
+                            </div>
+                        )}
+
+                        {activeTab === 'edit' && (
+                            <form onSubmit={selectedLesson ? handleSaveEdit : handleCreateNewLesson}>
+                                <FormGroup>
+                                    <label htmlFor="subject">Предмет *</label>
+                                    <input
+                                        type="text"
+                                        id="subject"
+                                        name="subject"
+                                        value={editFormData.subject || ''}
+                                        onChange={handleEditFormChange}
+                                        required
+                                    />
+                                </FormGroup>
+
+                                <div style={{display: 'flex', gap: '16px'}}>
+                                    <FormGroup style={{flex: 1}}>
+                                        <label htmlFor="lesson_type">Тип занятия</label>
+                                        <select
+                                            id="lesson_type"
+                                            name="lesson_type"
+                                            value={editFormData.lesson_type || 'лек.'}
+                                            onChange={handleEditFormChange}
+                                        >
+                                            <option value="лек.">Лекция</option>
+                                            <option value="пр.">Практика</option>
+                                            <option value="лаб.">Лабораторная</option>
+                                            <option value="сем.">Семинар</option>
+                                            <option value="конс.">Консультация</option>
+                                            <option value="экз.">Экзамен</option>
+                                            <option value="зач.">Зачёт</option>
+                                        </select>
+                                    </FormGroup>
+
+                                    <FormGroup style={{flex: 1}}>
+                                        <label htmlFor="subgroup">Подгруппа</label>
+                                        <select
+                                            id="subgroup"
+                                            name="subgroup"
+                                            value={editFormData.subgroup || 0}
+                                            onChange={handleEditFormChange}
+                                        >
+                                            <option value={0}>Общая</option>
+                                            <option value={1}>Подгруппа 1</option>
+                                            <option value={2}>Подгруппа 2</option>
+                                            <option value={3}>Подгруппа 3</option>
+                                        </select>
+                                    </FormGroup>
+                                </div>
+
+                                <div style={{display: 'flex', gap: '16px'}}>
+                                    <FormGroup style={{flex: 1}}>
+                                        <label htmlFor="date">Дата *</label>
+                                        <input
+                                            type="date"
+                                            id="date"
+                                            name="date"
+                                            value={editFormData.date || ''}
+                                            onChange={handleEditFormChange}
+                                            required
+                                        />
+                                    </FormGroup>
+
+                                    <FormGroup style={{flex: 1}}>
+                                        <label htmlFor="weekday">День недели *</label>
+                                        <select
+                                            id="weekday"
+                                            name="weekday"
+                                            value={editFormData.weekday || 1}
+                                            onChange={handleEditFormChange}
+                                            required
+                                        >
+                                            <option value={1}>Понедельник</option>
+                                            <option value={2}>Вторник</option>
+                                            <option value={3}>Среда</option>
+                                            <option value={4}>Четверг</option>
+                                            <option value={5}>Пятница</option>
+                                            <option value={6}>Суббота</option>
+                                        </select>
+                                    </FormGroup>
+                                </div>
+
+                                <div style={{display: 'flex', gap: '16px'}}>
+                                    <FormGroup style={{flex: 1}}>
+                                        <label htmlFor="time_start">Начало *</label>
+                                        <select
+                                            id="time_start"
+                                            name="time_start"
+                                            value={editFormData.time_start || ''}
+                                            onChange={handleEditFormChange}
+                                            required
+                                        >
+                                            {timeSlots.map(slot => (
+                                                <option key={`start_${slot.id}`} value={slot.time_start}>
+                                                    {slot.time_start}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </FormGroup>
+
+                                    <FormGroup style={{flex: 1}}>
+                                        <label htmlFor="time_end">Окончание *</label>
+                                        <select
+                                            id="time_end"
+                                            name="time_end"
+                                            value={editFormData.time_end || ''}
+                                            onChange={handleEditFormChange}
+                                            required
+                                        >
+                                            {timeSlots.map(slot => (
+                                                <option key={`end_${slot.id}`} value={slot.time_end}>
+                                                    {slot.time_end}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </FormGroup>
+                                </div>
+
+                                <FormGroup>
+                                    <label htmlFor="group_name">Группа *</label>
+                                    <input
+                                        type="text"
+                                        id="group_name"
+                                        name="group_name"
+                                        value={editFormData.group_name || ''}
+                                        onChange={handleEditFormChange}
+                                        required
+                                        disabled={view === 'group'}
+                                    />
+                                </FormGroup>
+
+                                <div style={{display: 'flex', gap: '16px'}}>
+                                    <FormGroup style={{flex: 1}}>
+                                        <label htmlFor="course">Курс *</label>
+                                        <select
+                                            id="course"
+                                            name="course"
+                                            value={editFormData.course || 1}
+                                            onChange={handleEditFormChange}
+                                            required
+                                        >
+                                            {[1, 2, 3, 4, 5, 6].map(num => (
+                                                <option key={num} value={num}>{num} курс</option>
+                                            ))}
+                                        </select>
+                                    </FormGroup>
+
+                                    <FormGroup style={{flex: 1}}>
+                                        <label htmlFor="faculty">Факультет</label>
+                                        <input
+                                            type="text"
+                                            id="faculty"
+                                            name="faculty"
+                                            value={editFormData.faculty || ''}
+                                            onChange={handleEditFormChange}
+                                        />
+                                    </FormGroup>
+                                </div>
+
+                                <FormGroup>
+                                    <label htmlFor="teacher_name">Преподаватель</label>
+                                    <input
+                                        type="text"
+                                        id="teacher_name"
+                                        name="teacher_name"
+                                        value={editFormData.teacher_name || ''}
+                                        onChange={handleEditFormChange}
+                                        disabled={view === 'teacher'}
+                                    />
+                                </FormGroup>
+
+                                <FormGroup>
+                                    <label htmlFor="auditory">Аудитория</label>
+                                    <input
+                                        type="text"
+                                        id="auditory"
+                                        name="auditory"
+                                        value={editFormData.auditory || ''}
+                                        onChange={handleEditFormChange}
+                                        disabled={view === 'auditory'}
+                                    />
+                                </FormGroup>
+
+                                {error && (
+                                    <div style={{color: colors.danger, marginBottom: '16px', fontSize: '14px'}}>
+                                        {error}
+                                        {error.includes('конфликты') && (
+                                            <div style={{marginTop: '8px'}}>
+                                                <ActionModalButton
+                                                    type="button"
+                                                    warning
+                                                    onClick={() => {
+                                                        setConfirmationModalOpen(true);
+                                                    }}
+                                                    style={{fontSize: '12px', padding: '4px 8px'}}
+                                                >
+                                                    Принудительное сохранение
+                                                </ActionModalButton>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                <ButtonRow>
+                                    <ActionModalButton
+                                        type="button"
+                                        secondary
+                                        onClick={() => setEditModalOpen(false)}
+                                    >
+                                        Отмена
+                                    </ActionModalButton>
+
+                                    <ActionModalButton
+                                        type="submit"
+                                        disabled={saving}
+                                    >
+                                        {saving ? 'Сохранение...' : (selectedLesson ? 'Сохранить' : 'Создать')}
+                                    </ActionModalButton>
+                                </ButtonRow>
+                            </form>
+                        )}
+                    </EditModal>
+                </ModalOverlay>
+            )}
+
+            {/* Модальное окно для переноса занятия */}
+            {moveModalOpen && selectedLesson && (
+                <ModalOverlay onClick={() => setMoveModalOpen(false)}>
+                    <MoveModal onClick={(e) => e.stopPropagation()}>
+                        <ModalHeader>
+                            <ModalTitle>Перенос занятия</ModalTitle>
+                            <CloseButton onClick={() => setMoveModalOpen(false)}>×</CloseButton>
+                        </ModalHeader>
+                        <div style={{marginBottom: '16px'}}>
+                            <strong style={{fontSize: '16px'}}>{selectedLesson.subject}</strong>
+                            <div style={{marginTop: '4px', fontSize: '14px', color: colors.gray}}>
+                                {WEEKDAYS_FULL[selectedLesson.weekday]}, {formatFullDate(selectedLesson.date)}, {selectedLesson.time_start}-{selectedLesson.time_end}
+                            </div>
                         </div>
 
-                        <div style={{display: 'flex', gap: '16px'}}>
-                            <FormGroup style={{flex: 1}}>
-                                <label htmlFor="date">Дата *</label>
-                                <input
-                                    type="date"
-                                    id="date"
-                                    name="date"
-                                    value={editFormData.date || ''}
-                                    onChange={handleEditFormChange}
-                                    required
-                                />
-                            </FormGroup>
+                        <div style={{marginBottom: '16px'}}>
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                marginBottom: '12px'
+                            }}>
+                                <div style={{fontWeight: '500', marginBottom: '0'}}>Выберите новое время:</div>
 
-                            <FormGroup style={{flex: 1}}>
-                                <label htmlFor="weekday">День недели *</label>
-                                <select
-                                    id="weekday"
-                                    name="weekday"
-                                    value={editFormData.weekday || 1}
-                                    onChange={handleEditFormChange}
-                                    required
-                                >
-                                    <option value={1}>Понедельник</option>
-                                    <option value={2}>Вторник</option>
-                                    <option value={3}>Среда</option>
-                                    <option value={4}>Четверг</option>
-                                    <option value={5}>Пятница</option>
-                                    <option value={6}>Суббота</option>
-                                </select>
-                            </FormGroup>
+                                <div style={{display: 'flex', gap: '8px'}}>
+                                    <select
+                                        value={conflictHandlingOption}
+                                        onChange={(e) => setConflictHandlingOption(e.target.value)}
+                                        style={{
+                                            padding: '4px 8px',
+                                            borderRadius: '6px',
+                                            border: '1px solid #ddd',
+                                            fontSize: '12px'
+                                        }}
+                                    >
+                                        <option value="avoid">Избегать конфликтов</option>
+                                        <option value="force">Принудительное перемещение</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {availableMoveOptions.length === 0 ? (
+                                <div style={{textAlign: 'center', padding: '20px 0', color: colors.gray}}>
+                                    <div>Загрузка вариантов...</div>
+                                    <div style={{marginTop: '10px'}}>
+                                        <LoadingSpinner/>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        marginBottom: '10px'
+                                    }}>
+                                        <div>
+                                            <span style={{
+                                                display: 'inline-block',
+                                                width: '12px',
+                                                height: '12px',
+                                                backgroundColor: 'white',
+                                                border: `1px solid ${colors.lightGray}`,
+                                                borderRadius: '3px',
+                                                marginRight: '5px'
+                                            }}></span>
+                                            <span style={{fontSize: '12px', color: colors.gray}}>Доступно</span>
+                                        </div>
+                                        <div>
+                                            <span style={{
+                                                display: 'inline-block',
+                                                width: '12px',
+                                                height: '12px',
+                                                backgroundColor: '#FFF5F5',
+                                                border: `1px solid ${colors.danger}`,
+                                                borderRadius: '3px',
+                                                marginRight: '5px'
+                                            }}></span>
+                                            <span style={{fontSize: '12px', color: colors.gray}}>Занято</span>
+                                        </div>
+                                    </div>
+
+                                    <div style={{maxHeight: '300px', overflowY: 'auto'}}>
+                                        {availableMoveOptions.map((option, index) => (
+                                            <MoveOption
+                                                key={index}
+                                                isOccupied={option.isOccupied}
+                                                onClick={() => handleMove(option)}
+                                            >
+                                                {option.isOccupied && (
+                                                    <OccupiedBadge>
+                                                        {option.totalConflicts > 1 ? `${option.totalConflicts} конфликтов` : 'Занято'}
+                                                    </OccupiedBadge>
+                                                )}
+                                                <strong>{option.weekdayName}, {option.dateFormatted}</strong>
+                                                <div>{option.time_start} - {option.time_end}</div>
+
+                                                {option.isOccupied && (
+                                                    <ConflictsList>
+                                                        <div style={{fontWeight: '500', marginBottom: '4px'}}>Конфликты:</div>
+
+                                                        {/* Показываем конфликты по преподавателю */}
+                                                        {option.teacherConflicts?.length > 0 && (
+                                                            <ConflictItem type="teacher">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                                                                    viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                                    strokeWidth="2"
+                                                                    strokeLinecap="round" strokeLinejoin="round">
+                                                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                                                    <circle cx="12" cy="7" r="4"></circle>
+                                                                </svg>
+                                                                <div>
+                                                                    <ConflictTypeTag
+                                                                        type="teacher">Преподаватель</ConflictTypeTag>
+                                                                    <span>
+                                                                        {option.teacherConflicts.length === 1 ?
+                                                                            `${option.teacherConflicts[0].subject} (${option.teacherConflicts[0].group_name})` :
+                                                                            `${option.teacherConflicts.length} занятий`}
+                                                                    </span>
+                                                                </div>
+                                                            </ConflictItem>
+                                                        )}
+
+                                                        {/* Показываем конфликты по группе */}
+                                                        {option.groupConflicts?.length > 0 && (
+                                                            <ConflictItem type="group">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                                                                    viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                                    strokeWidth="2"
+                                                                    strokeLinecap="round" strokeLinejoin="round">
+                                                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                                                    <circle cx="9" cy="7" r="4"></circle>
+                                                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                                                </svg>
+                                                                <div>
+                                                                    <ConflictTypeTag type="group">Группа</ConflictTypeTag>
+                                                                    <span>
+                                                                        {option.groupConflicts.length === 1 ?
+                                                                            `${option.groupConflicts[0].subject} (${option.groupConflicts[0].teacher_name})` :
+                                                                            `${option.groupConflicts.length} занятий`}
+                                                                    </span>
+                                                                </div>
+                                                            </ConflictItem>
+                                                        )}
+
+                                                        {/* Показываем конфликты по аудитории */}
+                                                        {option.auditoryConflicts?.length > 0 && (
+                                                            <ConflictItem type="auditory">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                                                                    viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                                    strokeWidth="2"
+                                                                    strokeLinecap="round" strokeLinejoin="round">
+                                                                    <path
+                                                                        d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                                                    <circle cx="12" cy="10" r="3"></circle>
+                                                                </svg>
+                                                                <div>
+                                                                    <ConflictTypeTag type="auditory">Аудитория</ConflictTypeTag>
+                                                                    <span>
+                                                                        {option.auditoryConflicts.length === 1 ?
+                                                                            `${option.auditoryConflicts[0].subject} (${option.auditoryConflicts[0].teacher_name})` :
+                                                                            `${option.auditoryConflicts.length} занятий`}
+                                                                    </span>
+                                                                </div>
+                                                            </ConflictItem>
+                                                        )}
+                                                    </ConflictsList>
+                                                )}
+                                            </MoveOption>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
-
-                        <div style={{display: 'flex', gap: '16px'}}>
-                            <FormGroup style={{flex: 1}}>
-                                <label htmlFor="time_start">Начало *</label>
-                                <select
-                                    id="time_start"
-                                    name="time_start"
-                                    value={editFormData.time_start || ''}
-                                    onChange={handleEditFormChange}
-                                    required
-                                >
-                                    {timeSlots.map(slot => (<option key={`start_${slot.id}`} value={slot.time_start}>
-                                        {slot.time_start}
-                                    </option>))}
-                                </select>
-                            </FormGroup>
-
-                            <FormGroup style={{flex: 1}}>
-                                <label htmlFor="time_end">Окончание *</label>
-                                <select
-                                    id="time_end"
-                                    name="time_end"
-                                    value={editFormData.time_end || ''}
-                                    onChange={handleEditFormChange}
-                                    required
-                                >
-                                    {timeSlots.map(slot => (<option key={`end_${slot.id}`} value={slot.time_end}>
-                                        {slot.time_end}
-                                    </option>))}
-                                </select>
-                            </FormGroup>
-                        </div>
-
-                        <FormGroup>
-                            <label htmlFor="group_name">Группа *</label>
-                            <input
-                                type="text"
-                                id="group_name"
-                                name="group_name"
-                                value={editFormData.group_name || ''}
-                                onChange={handleEditFormChange}
-                                required
-                                disabled={view === 'group'}
-                            />
-                        </FormGroup>
-
-                        <div style={{display: 'flex', gap: '16px'}}>
-                            <FormGroup style={{flex: 1}}>
-                                <label htmlFor="course">Курс *</label>
-                                <select
-                                    id="course"
-                                    name="course"
-                                    value={editFormData.course || 1}
-                                    onChange={handleEditFormChange}
-                                    required
-                                >
-                                    {[1, 2, 3, 4, 5, 6].map(num => (<option key={num} value={num}>{num} курс</option>))}
-                                </select>
-                            </FormGroup>
-
-                            <FormGroup style={{flex: 1}}>
-                                <label htmlFor="faculty">Факультет</label>
-                                <input
-                                    type="text"
-                                    id="faculty"
-                                    name="faculty"
-                                    value={editFormData.faculty || ''}
-                                    onChange={handleEditFormChange}
-                                />
-                            </FormGroup>
-                        </div>
-
-                        <FormGroup>
-                            <label htmlFor="teacher_name">Преподаватель</label>
-                            <input
-                                type="text"
-                                id="teacher_name"
-                                name="teacher_name"
-                                value={editFormData.teacher_name || ''}
-                                onChange={handleEditFormChange}
-                                disabled={view === 'teacher'}
-                            />
-                        </FormGroup>
-
-                        <FormGroup>
-                            <label htmlFor="auditory">Аудитория</label>
-                            <input
-                                type="text"
-                                id="auditory"
-                                name="auditory"
-                                value={editFormData.auditory || ''}
-                                onChange={handleEditFormChange}
-                                disabled={view === 'auditory'}
-                            />
-                        </FormGroup>
-
-                        {error && (<div style={{color: colors.danger, marginBottom: '16px', fontSize: '14px'}}>
-                            {error}
-                            {error.includes('конфликты') && (<div style={{marginTop: '8px'}}>
-                                <ActionModalButton
-                                    type="button"
-                                    warning
-                                    onClick={() => {
-                                        setConfirmationModalOpen(true);
-                                    }}
-                                    style={{fontSize: '12px', padding: '4px 8px'}}
-                                >
-                                    Принудительное сохранение
-                                </ActionModalButton>
-                            </div>)}
-                        </div>)}
 
                         <ButtonRow>
                             <ActionModalButton
-                                type="button"
                                 secondary
-                                onClick={() => setEditModalOpen(false)}
+                                onClick={() => setMoveModalOpen(false)}
+                            >
+                                Отмена
+                            </ActionModalButton>
+                        </ButtonRow>
+                    </MoveModal>
+                </ModalOverlay>
+            )}
+
+            {/* Модальное окно для подтверждения действий */}
+            {confirmationModalOpen && (
+                <ModalOverlay onClick={() => setConfirmationModalOpen(false)}>
+                    <ConfirmationModal onClick={(e) => e.stopPropagation()}>
+                        <ModalHeader>
+                            <ModalTitle>Подтверждение</ModalTitle>
+                            <CloseButton onClick={() => setConfirmationModalOpen(false)}>×</CloseButton>
+                        </ModalHeader>
+                        <div style={{
+                            margin: '20px 0',
+                            whiteSpace: 'pre-line',
+                            textAlign: 'left',
+                            fontSize: '14px'
+                        }}>
+                            {confirmationMessage}
+                        </div>
+
+                        <ButtonRow>
+                            <ActionModalButton
+                                secondary
+                                onClick={() => setConfirmationModalOpen(false)}
                             >
                                 Отмена
                             </ActionModalButton>
 
                             <ActionModalButton
-                                type="submit"
-                                disabled={saving}
+                                danger
+                                onClick={() => {
+                                    setConfirmationModalOpen(false);
+                                    if (confirmationAction) {
+                                        confirmationAction();
+                                    }
+                                }}
                             >
-                                {saving ? 'Сохранение...' : (selectedLesson ? 'Сохранить' : 'Создать')}
+                                Подтверждаю
                             </ActionModalButton>
                         </ButtonRow>
-                    </form>)}</EditModal>
-            </ModalOverlay>)}
-            {/* Модальные окна для других операций: переноса, обмена, и т.д. /}
-{/ Модальное окно для переноса занятия */}
-            {moveModalOpen && selectedLesson && (<ModalOverlay onClick={() => setMoveModalOpen(false)}>
-                <MoveModal onClick={(e) => e.stopPropagation()}>
-                    <ModalHeader>
-                        <ModalTitle>Перенос занятия</ModalTitle>
-                        <CloseButton onClick={() => setMoveModalOpen(false)}>×</CloseButton>
-                    </ModalHeader>
-                    <div style={{marginBottom: '16px'}}>
-                        <strong style={{fontSize: '16px'}}>{selectedLesson.subject}</strong>
-                        <div style={{marginTop: '4px', fontSize: '14px', color: colors.gray}}>
-                            {WEEKDAYS_FULL[selectedLesson.weekday]}, {formatFullDate(selectedLesson.date)}, {selectedLesson.time_start}-{selectedLesson.time_end}
-                        </div>
-                    </div>
+                    </ConfirmationModal>
+                </ModalOverlay>
+            )}
+        {/* Модальное окно для обмена занятиями */}
+            {swapModalOpen && selectedLesson && (
+                <ModalOverlay onClick={() => setSwapModalOpen(false)}>
+                    <SwapModal onClick={(e) => e.stopPropagation()}>
+                        <ModalHeader>
+                            <ModalTitle>Обмен занятиями</ModalTitle>
+                            <CloseButton onClick={() => setSwapModalOpen(false)}>×</CloseButton>
+                        </ModalHeader>
 
-                    <div style={{marginBottom: '16px'}}>
-                        <div style={{
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'
-                        }}>
-                            <div style={{fontWeight: '500', marginBottom: '0'}}>Выберите новое время:</div>
-
-                            <div style={{display: 'flex', gap: '8px'}}>
-                                <select
-                                    value={conflictHandlingOption}
-                                    onChange={(e) => setConflictHandlingOption(e.target.value)}
-                                    style={{
-                                        padding: '4px 8px',
-                                        borderRadius: '6px',
-                                        border: '1px solid #ddd',
-                                        fontSize: '12px'
-                                    }}
-                                >
-                                    <option value="avoid">Избегать конфликтов</option>
-                                    <option value="force">Принудительное перемещение</option>
-                                </select>
+                        <div style={{marginBottom: '16px'}}>
+                            <strong style={{fontSize: '16px'}}>Исходное занятие: {selectedLesson.subject}</strong>
+                            <div style={{marginTop: '4px', fontSize: '14px', color: colors.gray}}>
+                                {WEEKDAYS_FULL[selectedLesson.weekday]}, {formatFullDate(selectedLesson.date)}, {selectedLesson.time_start}-{selectedLesson.time_end}
+                            </div>
+                            <div style={{marginTop: '4px', fontSize: '14px'}}>
+                                {selectedLesson.group_name}, {selectedLesson.teacher_name || 'Нет преподавателя'}, {selectedLesson.auditory || 'Нет аудитории'}
                             </div>
                         </div>
 
-                        {availableMoveOptions.length === 0 ? (
-                            <div style={{textAlign: 'center', padding: '20px 0', color: colors.gray}}>
-                                <div>Загрузка вариантов...</div>
-                                <div style={{marginTop: '10px'}}>
-                                    <LoadingSpinner/>
+                        <div style={{marginBottom: '16px'}}>
+                            <div style={{fontWeight: '500', marginBottom: '12px'}}>Выберите занятие для обмена:</div>
+
+                            {availableSwapOptions.length === 0 ? (
+                                <div style={{textAlign: 'center', padding: '20px 0', color: colors.gray}}>
+                                    <div>Загрузка вариантов...</div>
+                                    <div style={{marginTop: '10px'}}>
+                                        <LoadingSpinner/>
+                                    </div>
                                 </div>
-                            </div>) : (<div>
-                            <div style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                marginBottom: '10px'
-                            }}>
-                                <div>
-          <span style={{
-              display: 'inline-block',
-              width: '12px',
-              height: '12px',
-              backgroundColor: 'white',
-              border: `1px solid ${colors.lightGray}`,
-              borderRadius: '3px',
-              marginRight: '5px'
-          }}></span>
-                                    <span style={{fontSize: '12px', color: colors.gray}}>Доступно</span>
+                            ) : (
+                                <div style={{maxHeight: '400px', overflowY: 'auto'}}>
+                                    {availableSwapOptions.map((option, index) => (
+                                        <SwapOption
+                                            key={index}
+                                            onClick={() => handleSelectLessonForSwap(option)}
+                                        >
+                                            <div className="title">{option.subject}</div>
+                                            <div className="details">
+                                                {WEEKDAYS_FULL[option.weekday]}, {formatFullDate(option.date)}, {option.time_start}-{option.time_end}
+                                            </div>
+                                            <div className="details">
+                                                {option.group_name}, {option.teacher_name || 'Нет преподавателя'}, {option.auditory || 'Нет аудитории'}
+                                            </div>
+                                            {option.totalConflicts > 0 && (
+                                                <div style={{
+                                                    marginTop: '8px',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '4px',
+                                                    backgroundColor: '#FFF5F5',
+                                                    fontSize: '12px',
+                                                    color: colors.danger
+                                                }}>
+                                                    <ConflictIcon style={{marginRight: '4px', width: '12px', height: '12px'}} />
+                                                    {option.totalConflicts} возможных конфликтов при обмене
+                                                </div>
+                                            )}
+                                        </SwapOption>
+                                    ))}
                                 </div>
-                                <div>
-          <span style={{
-              display: 'inline-block',
-              width: '12px',
-              height: '12px',
-              backgroundColor: '#FFF5F5',
-              border: `1px solid ${colors.danger}`,
-              borderRadius: '3px',
-              marginRight: '5px'
-          }}></span>
-                                    <span style={{fontSize: '12px', color: colors.gray}}>Занято</span>
-                                </div>
+                            )}
+                        </div>
+
+                        <ButtonRow>
+                            <ActionModalButton
+                                secondary
+                                onClick={() => setSwapModalOpen(false)}
+                            >
+                                Отмена
+                            </ActionModalButton>
+                        </ButtonRow>
+                    </SwapModal>
+                </ModalOverlay>
+            )}
+
+            {/* Модальное окно для поиска оптимального времени */}
+            {optimalTimeModalOpen && selectedLesson && (
+                <ModalOverlay onClick={() => setOptimalTimeModalOpen(false)}>
+                    <OptimalTimeModal onClick={(e) => e.stopPropagation()}>
+                        <ModalHeader>
+                            <ModalTitle>Оптимальное время для занятия</ModalTitle>
+                            <CloseButton onClick={() => setOptimalTimeModalOpen(false)}>×</CloseButton>
+                        </ModalHeader>
+
+                        <div style={{marginBottom: '16px'}}>
+                            <strong style={{fontSize: '16px'}}>{selectedLesson.subject}</strong>
+                            <div style={{marginTop: '4px', fontSize: '14px', color: colors.gray}}>
+                                Текущее время: {WEEKDAYS_FULL[selectedLesson.weekday]}, {formatFullDate(selectedLesson.date)}, {selectedLesson.time_start}-{selectedLesson.time_end}
                             </div>
+                        </div>
 
-                            <div style={{maxHeight: '300px', overflowY: 'auto'}}>
-                                {availableMoveOptions.map((option, index) => (<MoveOption
-                                    key={index}
-                                    isOccupied={option.isOccupied}
-                                    onClick={() => handleMove(option)}
-                                >
-                                    {option.isOccupied && (<OccupiedBadge>
-                                        {option.totalConflicts > 1 ? `${option.totalConflicts} конфликтов` : 'Занято'}
-                                    </OccupiedBadge>)}
-                                    <strong>{option.weekdayName}, {option.dateFormatted}</strong>
-                                    <div>{option.time_start} - {option.time_end}</div>
+                        <div style={{marginBottom: '16px'}}>
+                            <div style={{fontWeight: '500', marginBottom: '12px'}}>Рекомендуемые варианты:</div>
 
-                                    {option.isOccupied && (<ConflictsList>
-                                        <div style={{fontWeight: '500', marginBottom: '4px'}}>Конфликты:</div>
+                            {optimalTimeOptions.length === 0 ? (
+                                <div style={{textAlign: 'center', padding: '20px 0', color: colors.gray}}>
+                                    <div>Поиск оптимального времени...</div>
+                                    <div style={{marginTop: '10px'}}>
+                                        <LoadingSpinner/>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{maxHeight: '400px', overflowY: 'auto'}}>
+                                    {optimalTimeOptions.map((option, index) => (
+                                        <OptimalTimeOption
+                                            key={index}
+                                            conflicts={option.total_conflicts || 0}
+                                            onClick={() => handleSelectOptimalTime(option)}
+                                        >
+                                            <strong>
+                                                {option.weekday_name}, {formatDate(option.date)}, {option.time_start}-{option.time_end}
+                                            </strong>
 
-                                        {/* Показываем конфликты по преподавателю */}
-                                        {option.teacherConflicts?.length > 0 && (<ConflictItem type="teacher">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
-                                                 viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                                 strokeWidth="2"
-                                                 strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                                <circle cx="12" cy="7" r="4"></circle>
-                                            </svg>
-                                            <div>
-                                                <ConflictTypeTag
-                                                    type="teacher">Преподаватель</ConflictTypeTag>
-                                                <span>
-                        {option.teacherConflicts.length === 1 ? `${option.teacherConflicts[0].subject} (${option.teacherConflicts[0].group_name})` : `${option.teacherConflicts.length} занятий`}
-                      </span>
-                                            </div>
-                                        </ConflictItem>)}
+                                            {option.total_conflicts === 0 ? (
+                                                <div style={{color: colors.success, marginTop: '4px', fontSize: '13px'}}>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: '4px', verticalAlign: 'middle'}}>
+                                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                                    </svg>
+                                                    Оптимальное время без конфликтов
+                                                </div>
+                                            ) : (
+                                                <div style={{
+                                                    marginTop: '4px',
+                                                    color: option.total_conflicts <= 1 ? '#FF9500' : colors.danger,
+                                                    fontSize: '13px'
+                                                }}>
+                                                    <ConflictIcon style={{marginRight: '4px', verticalAlign: 'middle'}} />
+                                                    {option.total_conflicts} конфликт(ов)
+                                                </div>
+                                            )}
+                                        </OptimalTimeOption>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
 
-                                        {/* Показываем конфликты по группе */}
-                                        {option.groupConflicts?.length > 0 && (<ConflictItem type="group">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
-                                                 viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                                 strokeWidth="2"
-                                                 strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                                                <circle cx="9" cy="7" r="4"></circle>
-                                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                                            </svg>
-                                            <div>
-                                                <ConflictTypeTag type="group">Группа</ConflictTypeTag>
-                                                <span>
-                        {option.groupConflicts.length === 1 ? `${option.groupConflicts[0].subject} (${option.groupConflicts[0].teacher_name})` : `${option.groupConflicts.length} занятий`}
-                      </span>
-                                            </div>
-                                        </ConflictItem>)}
+                        <ButtonRow>
+                            <ActionModalButton
+                                secondary
+                                onClick={() => setOptimalTimeModalOpen(false)}
+                            >
+                                Отмена
+                            </ActionModalButton>
+                        </ButtonRow>
+                    </OptimalTimeModal>
+                </ModalOverlay>
+            )}
 
-                                        {/* Показываем конфликты по аудитории */}
-                                        {option.auditoryConflicts?.length > 0 && (<ConflictItem type="auditory">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
-                                                 viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                                 strokeWidth="2"
-                                                 strokeLinecap="round" strokeLinejoin="round">
-                                                <path
-                                                    d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                                                <circle cx="12" cy="10" r="3"></circle>
-                                            </svg>
-                                            <div>
-                                                <ConflictTypeTag type="auditory">Аудитория</ConflictTypeTag>
-                                                <span>
-                        {option.auditoryConflicts.length === 1 ? `${option.auditoryConflicts[0].subject} (${option.auditoryConflicts[0].teacher_name})` : `${option.auditoryConflicts.length} занятий`}
-                      </span>
-                                            </div>
-                                        </ConflictItem>)}
-                                    </ConflictsList>)}
-                                </MoveOption>))}
+            {/* Модальное окно с подробной информацией о конфликтах */}
+            {detailedConflictsModalOpen && selectedConflictDetails && (
+                <ModalOverlay onClick={() => setDetailedConflictsModalOpen(false)}>
+                    <MoveModal onClick={(e) => e.stopPropagation()}>
+                        <ModalHeader>
+                            <ModalTitle>Конфликты при перемещении</ModalTitle>
+                            <CloseButton onClick={() => setDetailedConflictsModalOpen(false)}>×</CloseButton>
+                        </ModalHeader>
+
+                        <div style={{marginBottom: '16px'}}>
+                            <strong style={{fontSize: '16px'}}>{selectedLesson.subject}</strong>
+                            <div style={{marginTop: '4px', fontSize: '14px', color: colors.gray}}>
+                                Выбранное время: {WEEKDAYS_FULL[selectedConflictDetails.weekday]},
+                                {formatFullDate(selectedConflictDetails.date)},
+                                {selectedConflictDetails.time_start}-{selectedConflictDetails.time_end}
                             </div>
-                        </div>)}
-                    </div>
+                        </div>
 
-                    <ButtonRow>
-                        <ActionModalButton
-                            secondary
-                            onClick={() => setMoveModalOpen(false)}
-                        >
-                            Отмена
-                        </ActionModalButton>
-                    </ButtonRow></MoveModal>
-            </ModalOverlay>)}
-            {/* Остальные модальные окна... /}
-{/ Модальное окно для подтверждения действий */}
-            {confirmationModalOpen && (<ModalOverlay onClick={() => setConfirmationModalOpen(false)}>
-                <ConfirmationModal onClick={(e) => e.stopPropagation()}>
-                    <ModalHeader>
-                        <ModalTitle>Подтверждение</ModalTitle>
-                        <CloseButton onClick={() => setConfirmationModalOpen(false)}>×</CloseButton>
-                    </ModalHeader>
-                    <div style={{
-                        margin: '20px 0', whiteSpace: 'pre-line', textAlign: 'left', fontSize: '14px'
-                    }}>
-                        {confirmationMessage}
-                    </div>
+                        <AlertBox type="warning">
+                            <WarningIcon />
+                            <div>
+                                Обнаружены конфликты с другими занятиями на выбранное время.
+                                Проверьте детали конфликтов перед принудительным перемещением.
+                            </div>
+                        </AlertBox>
 
-                    <ButtonRow>
-                        <ActionModalButton
-                            secondary
-                            onClick={() => setConfirmationModalOpen(false)}
-                        >
-                            Отмена
-                        </ActionModalButton>
+                        <div style={{marginBottom: '16px'}}>
+                            <div style={{fontWeight: '500', marginBottom: '12px'}}>Конфликты:</div>
 
-                        <ActionModalButton
-                            danger
-                            onClick={() => {
-                                setConfirmationModalOpen(false);
-                                if (confirmationAction) {
-                                    confirmationAction();
-                                }
-                            }}
-                        >
-                            Подтверждаю
-                        </ActionModalButton>
-                    </ButtonRow></ConfirmationModal>
-            </ModalOverlay>)}
-        </>)
+                            <ConflictsList>
+                                {selectedConflictDetails.conflicts.map((conflict, index) => (
+                                    <ConflictItem
+                                        key={index}
+                                        type={conflict.conflict_type}
+                                    >
+                                        {conflict.conflict_type === 'teacher' ? (
+                                            <TeacherIcon />
+                                        ) : conflict.conflict_type === 'group' ? (
+                                            <GroupIcon />
+                                        ) : (
+                                            <LocationIcon />
+                                        )}
 
-}
+                                        <div>
+                                            <ConflictTypeTag type={conflict.conflict_type}>
+                                                {conflict.conflict_type === 'teacher' ? 'Преподаватель' :
+                                                 conflict.conflict_type === 'group' ? 'Группа' : 'Аудитория'}
+                                            </ConflictTypeTag>
+                                            <span>
+                                                {conflict.subject}, {conflict.conflict_value}
+                                            </span>
+                                        </div>
+                                    </ConflictItem>
+                                ))}
+                            </ConflictsList>
+                        </div>
+
+                        <ButtonRow>
+                            <ActionModalButton
+                                secondary
+                                onClick={() => setDetailedConflictsModalOpen(false)}
+                            >
+                                Отмена
+                            </ActionModalButton>
+
+                            <ActionModalButton
+                                warning
+                                onClick={handleForceMove}
+                            >
+                                Переместить принудительно
+                            </ActionModalButton>
+                        </ButtonRow>
+                    </MoveModal>
+                </ModalOverlay>
+            )}
+        </>
+    );
+};
 
 export default ScheduleTable;
