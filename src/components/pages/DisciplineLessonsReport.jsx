@@ -150,11 +150,15 @@ const DisciplineLessonsReport = () => {
   // Состояния для данных списков
   const [groupsList, setGroupsList] = useState([]);
   const [disciplinesList, setDisciplinesList] = useState([]);
-  const [teachersList, setTeachersList] = useState([]);
 
-  // Состояние для выбранных фильтров
+  // Состояния для фильтров - разделяем доступные опции и выбранные опции
+  const [availableTeachers, setAvailableTeachers] = useState([]);
   const [selectedTeachers, setSelectedTeachers] = useState([]);
+
+  const [availableSubgroups, setAvailableSubgroups] = useState([0, 1, 2]); // Фиксированные значения
   const [selectedSubgroups, setSelectedSubgroups] = useState([]);
+
+  const [availableLessonTypes, setAvailableLessonTypes] = useState([]);
   const [selectedLessonTypes, setSelectedLessonTypes] = useState([]);
 
   // Состояние для результатов
@@ -357,21 +361,20 @@ const DisciplineLessonsReport = () => {
           const uniqueTeachers = [...new Set(
             disciplineLessons.map(item => item.teacher_name).filter(Boolean)
           )].sort();
-          setTeachersList(uniqueTeachers);
+          setAvailableTeachers(uniqueTeachers);
+          setSelectedTeachers(uniqueTeachers);
 
           // Извлекаем уникальные типы занятий
           const uniqueLessonTypes = [...new Set(
             disciplineLessons.map(item => item.lesson_type).filter(Boolean)
           )].sort();
+          setAvailableLessonTypes(uniqueLessonTypes);
+          setSelectedLessonTypes(uniqueLessonTypes);
 
           // Извлекаем уникальные подгруппы
           const uniqueSubgroups = [...new Set(
             disciplineLessons.map(item => item.subgroup)
           )].sort();
-
-          // Устанавливаем изначально все фильтры выбранными
-          setSelectedTeachers(uniqueTeachers);
-          setSelectedLessonTypes(uniqueLessonTypes);
           setSelectedSubgroups(uniqueSubgroups);
 
         } catch (err) {
@@ -442,9 +445,12 @@ const DisciplineLessonsReport = () => {
           const testLessonTypes = ['лек.', 'пр.', 'лаб.'];
           const testSubgroups = [0, 1, 2];
 
-          setTeachersList(testTeachers);
+          setAvailableTeachers(testTeachers);
           setSelectedTeachers(testTeachers);
+
+          setAvailableLessonTypes(testLessonTypes);
           setSelectedLessonTypes(testLessonTypes);
+
           setSelectedSubgroups(testSubgroups);
         } finally {
           setLoadingLessons(false);
@@ -454,9 +460,10 @@ const DisciplineLessonsReport = () => {
       fetchLessons();
     } else {
       setLessons([]);
-      setTeachersList([]);
+      setAvailableTeachers([]);
       setSelectedTeachers([]);
       setSelectedSubgroups([]);
+      setAvailableLessonTypes([]);
       setSelectedLessonTypes([]);
     }
   }, [semester, group, discipline]);
@@ -516,15 +523,11 @@ const DisciplineLessonsReport = () => {
   };
 
   const handleLessonTypeFilterChange = (type) => {
-    // Этот обработчик немного отличается от остальных:
-    // нужно обрабатывать флаг выбора типа занятия
-    const newSelectedTypes = selectedLessonTypes.includes(type)
-      ? selectedLessonTypes.filter(t => t !== type)
-      : [...selectedLessonTypes, type];
-
-    // Обновляем фильтр, но на самом деле не изменяем список доступных типов
-    // (который зависит от полученных данных)
-    setSelectedLessonTypes(newSelectedTypes);
+    setSelectedLessonTypes(prev =>
+      prev.includes(type)
+        ? prev.filter(t => t !== type)
+        : [...prev, type]
+    );
   };
 
   // Обработчик экспорта в Excel
@@ -550,6 +553,20 @@ const DisciplineLessonsReport = () => {
     return weekdays[weekday] || '';
   };
 
+  // Функция для получения русского названия типа занятия
+  const getLessonTypeName = (type) => {
+    switch (type) {
+      case 'лек.': return 'Лекция';
+      case 'пр.': return 'Практика';
+      case 'лаб.': return 'Лабораторная';
+      case 'сем.': return 'Семинар';
+      case 'конс.': return 'Консультация';
+      case 'экз.': return 'Экзамен';
+      case 'зач.': return 'Зачет';
+      default: return type;
+    }
+  };
+
   return (
     <PageContainer>
       <Header isLoggedIn={isLoggedIn} userRole={userRole} />
@@ -570,6 +587,7 @@ const DisciplineLessonsReport = () => {
       </div>
 
       <FilterCard>
+        {/* Основные параметры всегда видимы */}
         <FilterSection>
           <FilterTitle>Основные параметры</FilterTitle>
           <Row>
@@ -629,15 +647,16 @@ const DisciplineLessonsReport = () => {
           </Row>
         </FilterSection>
 
+        {/* Дополнительные фильтры показываются только если выбрана дисциплина */}
         {discipline && (
           <FilterSection>
             <FilterTitle>Дополнительные фильтры</FilterTitle>
 
-            {teachersList.length > 0 && (
+            {availableTeachers.length > 0 && (
               <div style={{ marginBottom: '16px' }}>
                 <FormLabel>Преподаватели</FormLabel>
                 <CheckboxGroup>
-                  {teachersList.map((teacher) => (
+                  {availableTeachers.map((teacher) => (
                     <CheckboxLabel key={teacher}>
                       <input
                         type="checkbox"
@@ -655,51 +674,31 @@ const DisciplineLessonsReport = () => {
               <Column minWidth="200px">
                 <FormLabel>Подгруппы</FormLabel>
                 <CheckboxGroup>
-                  <CheckboxLabel>
-                    <input
-                      type="checkbox"
-                      checked={selectedSubgroups.includes(0)}
-                      onChange={() => handleSubgroupFilterChange(0)}
-                    />
-                    Общая
-                  </CheckboxLabel>
-                  <CheckboxLabel>
-                    <input
-                      type="checkbox"
-                      checked={selectedSubgroups.includes(1)}
-                      onChange={() => handleSubgroupFilterChange(1)}
-                    />
-                    Подгруппа 1
-                  </CheckboxLabel>
-                  <CheckboxLabel>
-                    <input
-                      type="checkbox"
-                      checked={selectedSubgroups.includes(2)}
-                      onChange={() => handleSubgroupFilterChange(2)}
-                    />
-                    Подгруппа 2
-                  </CheckboxLabel>
+                  {availableSubgroups.map(subgroup => (
+                    <CheckboxLabel key={`subgroup-${subgroup}`}>
+                      <input
+                        type="checkbox"
+                        checked={selectedSubgroups.includes(subgroup)}
+                        onChange={() => handleSubgroupFilterChange(subgroup)}
+                      />
+                      {subgroup === 0 ? 'Общая' : `Подгруппа ${subgroup}`}
+                    </CheckboxLabel>
+                  ))}
                 </CheckboxGroup>
               </Column>
 
               <Column minWidth="200px">
                 <FormLabel>Типы занятий</FormLabel>
                 <CheckboxGroup>
-                  {/* Показываем только те типы занятий, которые есть в данных */}
-                  {selectedLessonTypes.map((type) => (
-                    <CheckboxLabel key={type}>
+                  {/* Показываем чекбоксы из доступных типов занятий */}
+                  {availableLessonTypes.map((type) => (
+                    <CheckboxLabel key={`lessontype-${type}`}>
                       <input
                         type="checkbox"
                         checked={selectedLessonTypes.includes(type)}
                         onChange={() => handleLessonTypeFilterChange(type)}
                       />
-                      {type === 'лек.' ? 'Лекция' :
-                       type === 'пр.' ? 'Практика' :
-                       type === 'лаб.' ? 'Лабораторная' :
-                       type === 'сем.' ? 'Семинар' :
-                       type === 'конс.' ? 'Консультация' :
-                       type === 'экз.' ? 'Экзамен' :
-                       type === 'зач.' ? 'Зачет' : type}
+                      {getLessonTypeName(type)}
                     </CheckboxLabel>
                   ))}
                 </CheckboxGroup>
@@ -765,7 +764,7 @@ const DisciplineLessonsReport = () => {
                       <Td>{formatDate(lesson.date)}</Td>
                       <Td>{getWeekdayName(lesson.weekday)}</Td>
                       <Td>{lesson.time_start} - {lesson.time_end}</Td>
-                      <Td>{lesson.lesson_type}</Td>
+                      <Td>{getLessonTypeName(lesson.lesson_type)}</Td>
                       <Td>{lesson.teacher_name || '-'}</Td>
                       <Td>{lesson.subgroup === 0 ? 'Общая' : `Подгруппа ${lesson.subgroup}`}</Td>
                       <Td>{lesson.auditory || '-'}</Td>
