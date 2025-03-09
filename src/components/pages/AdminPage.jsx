@@ -120,6 +120,15 @@ const LoadingContainer = styled.div`
   }
 `;
 
+const ErrorMessage = styled.div`
+  color: ${colors.danger};
+  background-color: #FFEAEF;
+  border: 1px solid #FFAFBF;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+`;
+
 // Определение конфигурации меню с правами доступа
 const MENU_CONFIG = [
   {
@@ -215,35 +224,46 @@ const AdminPage = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
   const [mobileMenuExpanded, setMobileMenuExpanded] = useState(false);
 
-  // Получение активного маршрута из текущего пути
-  const activeRouteId = location.pathname.split('/').pop();
+  // Extract the active route ID from the current path
+  const getActiveRouteId = () => {
+    const path = location.pathname;
+    const parts = path.split('/');
+    return parts.length >= 3 ? parts[2] : '';
+  };
 
-  // Проверка авторизации при загрузке страницы
+  const activeRouteId = getActiveRouteId();
+
+  // Check authentication when component mounts
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('token');
 
       if (!token) {
+        console.log("No token found");
         setIsLoggedIn(false);
         setLoading(false);
         return;
       }
 
       try {
+        console.log("Token found, checking auth...");
         const response = await authApi.getCurrentUser();
         const user = response.data;
 
+        console.log("Auth successful, user role:", user.role);
         setIsLoggedIn(true);
         setUserRole(user.role);
 
-        // Обновляем данные пользователя в localStorage
+        // Update user data in localStorage
         localStorage.setItem('user', JSON.stringify(user));
       } catch (err) {
         console.error('Ошибка при проверке авторизации:', err);
+        setAuthError("Ошибка аутентификации. Возможно, ваш токен истек или недействителен.");
 
-        // Удаляем токен при ошибке авторизации
+        // Remove token on auth error
         localStorage.removeItem('token');
         localStorage.removeItem('user');
 
@@ -256,7 +276,7 @@ const AdminPage = () => {
     checkAuth();
   }, []);
 
-  // Получение всех доступных маршрутов на основе роли пользователя
+  // Get available routes based on user role
   const getAvailableRoutes = () => {
     const routes = [];
 
@@ -271,24 +291,19 @@ const AdminPage = () => {
     return routes;
   };
 
-  // Получение первого доступного маршрута
+  // Get the first available route
   const getFirstAvailableRoute = () => {
     const availableRoutes = getAvailableRoutes();
-    return availableRoutes.length > 0 ? availableRoutes[0].path : '/login';
+    return availableRoutes.length > 0 ? availableRoutes[0].id : '';
   };
 
-  // Обработчик перехода к выбранному разделу
+  // Handle navigation to a different section
   const handleNavigation = (path) => {
     navigate(path);
     setMobileMenuExpanded(false);
   };
 
-  // Если не авторизован или не имеет прав, перенаправляем на страницу входа
-  if (!loading && (!isLoggedIn || (userRole !== 'admin' && userRole !== 'editor'))) {
-    return <Navigate to="/login" replace />;
-  }
-
-  // Показываем загрузку, пока проверяем авторизацию
+  // Show loading spinner while checking authentication
   if (loading) {
     return (
       <PageContainer>
@@ -304,8 +319,27 @@ const AdminPage = () => {
             <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
             <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
           </svg>
-          <div style={{ marginTop: '12px', color: colors.gray }}>Загрузка...</div>
+          <div style={{ marginTop: '12px', color: colors.gray }}>Проверка авторизации...</div>
         </LoadingContainer>
+      </PageContainer>
+    );
+  }
+
+  // Show access denied message if not authenticated or not having proper role
+  if (!isLoggedIn || (userRole !== 'admin' && userRole !== 'editor')) {
+    return (
+      <PageContainer>
+        <Header isLoggedIn={false} />
+        <Card style={{ padding: '20px', textAlign: 'center' }}>
+          <Title>Доступ ограничен</Title>
+          {authError && <ErrorMessage>{authError}</ErrorMessage>}
+          <p style={{ margin: '20px 0' }}>
+            Для доступа к панели администрирования необходимо войти в систему с правами администратора или редактора.
+          </p>
+          <Button onClick={() => navigate('/login')}>
+            Войти в систему
+          </Button>
+        </Card>
       </PageContainer>
     );
   }
@@ -327,14 +361,14 @@ const AdminPage = () => {
       </MobileMenuToggle>
 
       <AdminLayout>
-        {/* Боковое меню */}
+        {/* Sidebar menu */}
         <Sidebar style={{ display: mobileMenuExpanded || window.innerWidth > 768 ? 'block' : 'none' }}>
           <SidebarCard>
             {MENU_CONFIG.map((group, groupIndex) => {
-              // Фильтруем элементы на основе роли пользователя
+              // Filter items based on user role
               const availableItems = group.items.filter(item => item.roles.includes(userRole));
 
-              // Если нет доступных элементов в группе, не показываем группу
+              // Don't show group if no items available
               if (availableItems.length === 0) return null;
 
               return (
@@ -357,31 +391,33 @@ const AdminPage = () => {
           </SidebarCard>
         </Sidebar>
 
-        {/* Основная область контента */}
+        {/* Content area */}
         <ContentArea>
           <Card style={{ padding: '20px' }}>
             <Routes>
-              {/* Динамически создаем маршруты на основе конфигурации */}
+              {/* Dynamically create routes */}
               {MENU_CONFIG.flatMap(group =>
                 group.items
                   .filter(item => item.roles.includes(userRole))
                   .map(item => (
                     <Route
                       key={item.id}
-                      path={item.path.replace('/admin', '')}
+                      path={item.id}
                       element={<item.component />}
                     />
                   ))
               )}
 
-              {/* Редирект на первый доступный маршрут */}
+              {/* Default route */}
               <Route
                 path="/"
-                element={<Navigate to={getFirstAvailableRoute().replace('/admin', '')} replace />}
+                element={<Navigate to={getFirstAvailableRoute()} replace />}
               />
+
+              {/* Fallback route */}
               <Route
                 path="*"
-                element={<Navigate to={getFirstAvailableRoute().replace('/admin', '')} replace />}
+                element={<Navigate to={getFirstAvailableRoute()} replace />}
               />
             </Routes>
           </Card>
@@ -393,6 +429,11 @@ const AdminPage = () => {
           body {
             overflow-x: hidden;
           }
+        }
+        
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
       `}</style>
     </PageContainer>

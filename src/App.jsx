@@ -7,8 +7,14 @@ import HomePage from './components/pages/HomePage';
 import SchedulePage from './components/pages/SchedulePage';
 import LoginPage from './components/pages/LoginPage';
 import AdminPage from './components/pages/AdminPage';
-import ReportsListPage from './components/pages/ReportsListPage'; // Импортируем компонент списка отчетов
-import DisciplineLessonsReport from './components/pages/DisciplineLessonsReport'; // Импортируем компонент отчета по дисциплине
+import ReportsListPage from './components/pages/ReportsListPage';
+import DisciplineLessonsReport from './components/pages/DisciplineLessonsReport';
+
+// Admin components for nested routes
+import ScheduleEditor from './components/admin/ScheduleEditor';
+import ScheduleImport from './components/admin/ScheduleImport';
+import UserManagement from './components/admin/UserManagement';
+import TimeSlotManager from './components/admin/TimeSlotManager';
 
 // Global styles
 const GlobalStyle = createGlobalStyle`
@@ -43,13 +49,20 @@ function App() {
       <GlobalStyle />
       <AppContainer>
         <Routes>
+          {/* Main routes */}
           <Route path="/" element={<HomePage />} />
           <Route path="/schedule/:type/:id" element={<SchedulePage />} />
           <Route path="/schedule/:type/:id/:semester/:week" element={<SchedulePage />} />
           <Route path="/login" element={<LoginPage />} />
+
+          {/* Admin routes - with trailing asterisk for nested routes */}
           <Route path="/admin/*" element={<AdminPage />} />
-          <Route path="/reports" element={<ReportsListPage />} /> {/* Главная страница отчетов */}
-          <Route path="/reports/discipline-lessons" element={<DisciplineLessonsReport />} /> {/* Отчет "Занятия по дисциплине" */}
+
+          {/* Reports routes */}
+          <Route path="/reports" element={<ReportsListPage />} />
+          <Route path="/reports/discipline-lessons" element={<DisciplineLessonsReport />} />
+
+          {/* Catch-all route */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppContainer>

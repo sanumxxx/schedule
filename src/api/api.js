@@ -302,7 +302,55 @@ export const scheduleApi = {
     }
 };
 
+export const lessonTypesApi = {
+  getLessonTypes: () => {
+    return api.get('/lesson_types');
+  },
 
+  createLessonType: (data) => {
+    return api.post('/lesson_types', data);
+  },
+
+  updateLessonType: (id, data) => {
+    return api.put(`/lesson_types/${id}`, data);
+  },
+
+  deleteLessonType: (id) => {
+    return api.delete(`/lesson_types/${id}`);
+  }
+};
+
+export const teacherWorkloadApi = {
+  getTeacherWorkload: (teacherId, semester, filters = {}) => {
+    return api.get(`/reports/teacher_workload/${teacherId}`, {
+      params: {
+        semester,
+        ...filters
+      }
+    });
+  },
+
+  getAllTeachersWorkload: (semester, filters = {}) => {
+    return api.get('/reports/teacher_workload', {
+      params: {
+        semester,
+        ...filters
+      }
+    });
+  },
+
+  exportTeacherWorkloadToExcel: (teacherId, semester, filters = {}) => {
+    return api.get(`/reports/teacher_workload/${teacherId}/export`, {
+      params: {
+        semester,
+        ...filters
+      },
+      responseType: 'blob'
+    }).then(response => {
+      saveAs(new Blob([response.data]), `teacher_workload_${teacherId}_${semester}.xlsx`);
+    });
+  }
+};
 // API для работы с пользователями и авторизацией
 export const authApi = {
     login: (username, password) => {
