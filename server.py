@@ -2389,6 +2389,33 @@ def analyze_schedule_files(current_user):
         return jsonify({'message': f'Ошибка при анализе файлов: {str(e)}'}), 500
 
 
+@app.route('/api/schedule/week', methods=['DELETE'])
+@token_required
+@admin_required
+def delete_schedule_by_week(current_user):
+    semester = request.args.get('semester', type=int)
+    week_number = request.args.get('week_number', type=int)
+
+    if not semester or not week_number:
+        return jsonify({'message': 'Необходимо указать семестр и номер недели'}), 400
+
+    try:
+        # Delete all schedule items for the specified week
+        deleted = Schedule.query.filter_by(
+            semester=semester,
+            week_number=week_number
+        ).delete()
+
+        db.session.commit()
+
+        return jsonify({
+            'message': f'Успешно удалено {deleted} записей расписания для недели {week_number} семестра {semester}',
+            'deleted_count': deleted
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': f'Ошибка при удалении расписания: {str(e)}'}), 500
+
 # Импорт расписания из файлов
 @app.route('/api/schedule/upload', methods=['POST'])
 @token_required

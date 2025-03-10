@@ -288,6 +288,12 @@ export const scheduleApi = {
             lesson_id: lessonId, semester: semester, week_number: week
         });
     },
+    // Add to scheduleApi object
+deleteScheduleByWeek: (semester, week_number) => {
+  return api.delete('/schedule/week', {
+    params: { semester, week_number }
+  });
+},
 
     // Получение статистики загруженности
     getUsageStats: (semester, week) => {
