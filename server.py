@@ -98,6 +98,36 @@ class TimeSlot(db.Model):
         }
 
 
+class LessonType(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    type_name = db.Column(db.String(50), nullable=False, unique=True)
+    db_values = db.Column(db.Text, nullable=False)  # Stored as JSON string
+    full_name = db.Column(db.String(100), nullable=True)
+    hours_multiplier = db.Column(db.Integer, default=2)
+    color = db.Column(db.String(20), default="#E9F0FC")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'type_name': self.type_name,
+            'db_values': json.loads(self.db_values),  # Convert JSON string to list
+            'full_name': self.full_name,
+            'hours_multiplier': self.hours_multiplier,
+            'color': self.color,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
+            'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
+        }
+
+    # Helper method to check if a DB value matches this lesson type
+    def matches_db_value(self, value):
+        if not value:
+            return False
+
+        db_values_list = json.loads(self.db_values)
+        return value.lower() in [v.lower() for v in db_values_list if v]
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
@@ -2216,6 +2246,7 @@ def analyze_schedule_files(current_user):
         # Информация о неделях
         weeks_info = {}
         total_lessons = 0
+        problem_files = []  # Список для хранения информации о проблемных файлах
 
         # Обрабатываем каждый файл
         for file in files:
@@ -2224,14 +2255,12 @@ def analyze_schedule_files(current_user):
                 content = file.read().decode('windows-1251')
 
                 # Исправляем проблемы с экранированием символов
-                # Заменяем одиночные обратные слеши, которые не являются частью корректной escape-последовательности
                 import re
 
                 # Экранируем обратные слеши внутри строк
                 def fix_backslashes(match):
                     content = match.group(0)
                     # Заменяем одиночные \ на \\, но только если они не экранируют специальные символы
-                    # Например, \n, \t, \", \\ уже корректные и их не трогаем
                     return re.sub(r'\\(?!["\\/bfnrt])', r'\\\\', content)
 
                 # Ищем все строковые литералы в JSON и фиксируем в них обратные слеши
@@ -2241,74 +2270,119 @@ def analyze_schedule_files(current_user):
                 data = json.loads(fixed_content)
 
                 # Проверяем формат данных
-                if not isinstance(data, list) or not data or 'timetable' not in data[0]:
+                if not isinstance(data, list):
+                    problem_files.append({
+                        'file': file.filename,
+                        'error': 'Неверный формат данных (ожидается массив)'
+                    })
                     continue
 
-                timetable = data[0]['timetable']
+                file_has_timetable = False
 
-                # Собираем информацию о неделях
-                for week_data in timetable:
-                    week_number = week_data.get('week_number')
-                    date_start = week_data.get('date_start')
-                    date_end = week_data.get('date_end')
-
-                    if week_number is None:
+                # Обрабатываем каждый объект в массиве данных
+                for item in data:
+                    if 'timetable' not in item:
                         continue
 
-                    # Счетчики занятий и групп
-                    lessons_count = 0
-                    groups_set = set()
+                    file_has_timetable = True
+                    timetable = item['timetable']
 
-                    # Обрабатываем группы и занятия
-                    for group_data in week_data.get('groups', []):
-                        group_name = group_data.get('group_name')
-                        if group_name:
-                            groups_set.add(group_name)
+                    # Собираем информацию о неделях
+                    for week_data in timetable:
+                        week_number = week_data.get('week_number')
+                        date_start = week_data.get('date_start')
+                        date_end = week_data.get('date_end')
 
-                        # Подсчет занятий
-                        for day_data in group_data.get('days', []):
-                            lessons_count += len(day_data.get('lessons', []))
+                        if week_number is None:
+                            problem_files.append({
+                                'file': file.filename,
+                                'error': 'Отсутствует номер недели в данных',
+                                'week_data': week_data
+                            })
+                            continue
 
-                    # Проверяем, существуют ли занятия для этой недели в БД
-                    existing_lessons = Schedule.query.filter_by(
-                        semester=semester,
-                        week_number=week_number
-                    ).count()
+                        # Счетчики занятий и групп
+                        lessons_count = 0
+                        groups_set = set()
 
-                    status = 'new' if existing_lessons == 0 else 'exists'
+                        # Обрабатываем группы и занятия
+                        for group_data in week_data.get('groups', []):
+                            group_name = group_data.get('group_name')
+                            if group_name:
+                                groups_set.add(group_name)
 
-                    # Сохраняем информацию о неделе
-                    if week_number not in weeks_info:
-                        weeks_info[week_number] = {
-                            'week_number': week_number,
-                            'date_start': date_start,
-                            'date_end': date_end,
-                            'lessons_count': lessons_count,
-                            'groups_count': len(groups_set),
-                            'status': status
-                        }
-                    else:
-                        # Обновляем счетчики, если неделя уже встречалась
-                        weeks_info[week_number]['lessons_count'] += lessons_count
-                        weeks_info[week_number]['groups_count'] += len(groups_set)
+                            # Подсчет занятий
+                            for day_data in group_data.get('days', []):
+                                lessons_count += len(day_data.get('lessons', []))
 
-                    total_lessons += lessons_count
+                        # Проверяем, существуют ли занятия для этой недели в БД
+                        existing_lessons = Schedule.query.filter_by(
+                            semester=semester,
+                            week_number=week_number
+                        ).count()
+
+                        status = 'new' if existing_lessons == 0 else 'exists'
+
+                        # Сохраняем информацию о неделе
+                        if week_number not in weeks_info:
+                            weeks_info[week_number] = {
+                                'week_number': week_number,
+                                'date_start': date_start,
+                                'date_end': date_end,
+                                'lessons_count': lessons_count,
+                                'groups_count': len(groups_set),
+                                'status': status
+                            }
+                        else:
+                            # Обновляем счетчики, если неделя уже встречалась
+                            weeks_info[week_number]['lessons_count'] += lessons_count
+                            weeks_info[week_number]['groups_count'] += len(groups_set)
+
+                        total_lessons += lessons_count
+
+                # Проверяем, содержал ли файл вообще таблицу расписания
+                if not file_has_timetable:
+                    problem_files.append({
+                        'file': file.filename,
+                        'error': 'Файл не содержит данных о расписании (отсутствует ключ "timetable")'
+                    })
+
             except Exception as e:
-                # Логируем ошибку для каждого файла, но продолжаем обработку других файлов
+                # Логируем ошибку для каждого файла и добавляем в список проблемных файлов
                 print(f"Ошибка обработки файла {file.filename}: {str(e)}")
+                problem_files.append({
+                    'file': file.filename,
+                    'error': f"Ошибка обработки файла: {str(e)}"
+                })
                 continue
 
         # Преобразуем словарь в список для ответа
         weeks_list = list(weeks_info.values())
 
+        # Сортируем недели по номеру
+        weeks_list.sort(key=lambda x: x['week_number'])
+
         if not weeks_list:
-            return jsonify(
-                {'message': 'Не удалось извлечь данные о неделях из загруженных файлов. Проверьте формат файлов.'}), 400
+            return jsonify({
+                'message': 'Не удалось извлечь данные о неделях из загруженных файлов. Проверьте формат файлов.',
+                'problem_files': problem_files,
+                'problem_files_count': len(problem_files)
+            }), 400
+
+        # Сохраняем информацию о проблемных файлах в отдельный файл
+        if problem_files:
+            try:
+                with open('problem_files_analysis.json', 'w', encoding='utf-8') as f:
+                    json.dump(problem_files, f, ensure_ascii=False, indent=2)
+            except Exception as file_write_error:
+                print(f"Ошибка при сохранении информации о проблемных файлах: {str(file_write_error)}")
 
         return jsonify({
             'weeks': weeks_list,
             'total_lessons': total_lessons,
-            'files_count': len(files)
+            'files_count': len(files),
+            'problem_files': problem_files,
+            'problem_files_count': len(problem_files)
         }), 200
 
     except Exception as e:
@@ -2349,6 +2423,9 @@ def upload_schedule(current_user):
         failed_count = 0
         processed_groups = set()
 
+        # Список для хранения проблемных пар
+        problem_lessons = []
+
         # Обрабатываем каждый файл
         for file in files:
             try:
@@ -2361,7 +2438,7 @@ def upload_schedule(current_user):
                 # Экранируем обратные слеши внутри строк
                 def fix_backslashes(match):
                     content = match.group(0)
-                    # Заменяем одиночные \ на \\, но только если они не экранируют специальные символы
+                    # Заменяем одиночные \ на \\, только если они не экранируют специальные символы
                     return re.sub(r'\\(?!["\\/bfnrt])', r'\\\\', content)
 
                 # Ищем все строковые литералы в JSON и фиксируем в них обратные слеши
@@ -2371,110 +2448,182 @@ def upload_schedule(current_user):
                 data = json.loads(fixed_content)
 
                 # Проверяем формат данных
-                if not isinstance(data, list) or not data or 'timetable' not in data[0]:
+                if not isinstance(data, list):
                     continue
 
-                timetable = data[0]['timetable']
-
-                # Обрабатываем расписание
-                for week_data in timetable:
-                    week_number = week_data.get('week_number')
-
-                    # Пропускаем недели, которые не были выбраны
-                    if week_number not in selected_weeks:
+                # Обрабатываем каждый объект в массиве данных
+                for item in data:
+                    if 'timetable' not in item:
                         continue
 
-                    # Обрабатываем группы и занятия
-                    for group_data in week_data.get('groups', []):
-                        group_name = group_data.get('group_name')
-                        course = group_data.get('course')
-                        faculty = group_data.get('faculty')
+                    timetable = item['timetable']
 
-                        if not group_name or course is None:
+                    # Обрабатываем расписание
+                    for week_data in timetable:
+                        week_number = week_data.get('week_number')
+
+                        # Пропускаем недели, которые не были выбраны
+                        if week_number not in selected_weeks:
                             continue
 
-                        processed_groups.add(group_name)
+                        # Обрабатываем группы и занятия
+                        for group_data in week_data.get('groups', []):
+                            group_name = group_data.get('group_name')
+                            course = group_data.get('course')
+                            faculty = group_data.get('faculty')
 
-                        # Удаляем существующие занятия для этой группы на данной неделе
-                        Schedule.query.filter_by(
-                            semester=semester,
-                            week_number=week_number,
-                            group_name=group_name
-                        ).delete()
+                            if not group_name or course is None:
+                                continue
 
-                        # Обрабатываем дни и занятия
-                        for day_data in group_data.get('days', []):
-                            weekday = day_data.get('weekday')
+                            processed_groups.add(group_name)
 
-                            for lesson in day_data.get('lessons', []):
-                                try:
-                                    # Извлекаем данные о занятии
-                                    subject = lesson.get('subject')
-                                    lesson_type = lesson.get('type')
-                                    subgroup = lesson.get('subgroup', 0)
-                                    time_start = lesson.get('time_start')
-                                    time_end = lesson.get('time_end')
+                            # Удаляем существующие занятия для этой группы на данной неделе
+                            Schedule.query.filter_by(
+                                semester=semester,
+                                week_number=week_number,
+                                group_name=group_name
+                            ).delete()
 
-                                    # Преобразуем дату из строки в объект Date
-                                    date_str = lesson.get('date')
-                                    if date_str:
-                                        # Преобразуем формат даты из DD-MM-YYYY в YYYY-MM-DD
-                                        day, month, year = date_str.split('-')
-                                        date = datetime.strptime(f"{year}-{month}-{day}", '%Y-%m-%d').date()
-                                    else:
-                                        # Если даты нет, пропускаем занятие
+                            # Обрабатываем дни и занятия
+                            for day_data in group_data.get('days', []):
+                                weekday = day_data.get('weekday')
+
+                                for lesson in day_data.get('lessons', []):
+                                    try:
+                                        # Извлекаем данные о занятии
+                                        subject = lesson.get('subject')
+                                        lesson_type = lesson.get('type')
+                                        subgroup = lesson.get('subgroup', 0)
+                                        time_start = lesson.get('time_start')
+                                        time_end = lesson.get('time_end')
+
+                                        # Преобразуем дату из строки в объект Date
+                                        date_str = lesson.get('date')
+                                        if date_str:
+                                            # Преобразуем формат даты из DD-MM-YYYY в YYYY-MM-DD
+                                            try:
+                                                day, month, year = date_str.split('-')
+                                                date = datetime.strptime(f"{year}-{month}-{day}", '%Y-%m-%d').date()
+                                            except (ValueError, TypeError) as e:
+                                                # Сохраняем информацию о проблемной паре
+                                                problem_lessons.append({
+                                                    'file': file.filename,
+                                                    'week': week_number,
+                                                    'group': group_name,
+                                                    'subject': subject,
+                                                    'date': date_str,
+                                                    'error': f'Ошибка формата даты: {str(e)}',
+                                                    'raw_data': lesson
+                                                })
+                                                failed_count += 1
+                                                continue
+                                        else:
+                                            # Если даты нет, это проблема
+                                            problem_lessons.append({
+                                                'file': file.filename,
+                                                'week': week_number,
+                                                'group': group_name,
+                                                'subject': subject,
+                                                'error': 'Отсутствует дата занятия',
+                                                'raw_data': lesson
+                                            })
+                                            failed_count += 1
+                                            continue
+
+                                        # Получаем имя преподавателя и аудиторию
+                                        teacher_name = ""
+                                        auditory = ""
+
+                                        if 'teachers' in lesson and lesson['teachers']:
+                                            teacher_name = lesson['teachers'][0].get('teacher_name', '')
+
+                                        if 'auditories' in lesson and lesson['auditories']:
+                                            auditory = lesson['auditories'][0].get('auditory_name', '')
+
+                                        # Проверка обязательных полей
+                                        if not all([subject, time_start, time_end, weekday is not None]):
+                                            problem_lessons.append({
+                                                'file': file.filename,
+                                                'week': week_number,
+                                                'group': group_name,
+                                                'subject': subject,
+                                                'date': date_str,
+                                                'error': 'Отсутствуют обязательные поля (предмет, время начала/окончания, день недели)',
+                                                'raw_data': lesson
+                                            })
+                                            failed_count += 1
+                                            continue
+
+                                        # Создаем новую запись
+                                        new_item = Schedule(
+                                            semester=semester,
+                                            week_number=week_number,
+                                            group_name=group_name,
+                                            course=course,
+                                            faculty=faculty or '',
+                                            subject=subject or '',
+                                            lesson_type=lesson_type or '',
+                                            subgroup=subgroup or 0,
+                                            date=date,
+                                            time_start=time_start or '',
+                                            time_end=time_end or '',
+                                            weekday=weekday or 0,
+                                            teacher_name=teacher_name,
+                                            auditory=auditory
+                                        )
+
+                                        db.session.add(new_item)
+                                        imported_count += 1
+                                    except Exception as e:
+                                        failed_count += 1
+                                        # Сохраняем подробную информацию о проблеме
+                                        problem_lessons.append({
+                                            'file': file.filename,
+                                            'week': week_number,
+                                            'group': group_name,
+                                            'subject': lesson.get('subject', 'Неизвестно'),
+                                            'date': lesson.get('date', 'Неизвестно'),
+                                            'time': f"{lesson.get('time_start', 'Н/Д')}-{lesson.get('time_end', 'Н/Д')}",
+                                            'error': str(e),
+                                            'raw_data': lesson
+                                        })
                                         continue
-
-                                    # Получаем имя преподавателя и аудиторию
-                                    teacher_name = ""
-                                    auditory = ""
-
-                                    if 'teachers' in lesson and lesson['teachers']:
-                                        teacher_name = lesson['teachers'][0].get('teacher_name', '')
-
-                                    if 'auditories' in lesson and lesson['auditories']:
-                                        auditory = lesson['auditories'][0].get('auditory_name', '')
-
-                                    # Создаем новую запись
-                                    new_item = Schedule(
-                                        semester=semester,
-                                        week_number=week_number,
-                                        group_name=group_name,
-                                        course=course,
-                                        faculty=faculty or '',
-                                        subject=subject or '',
-                                        lesson_type=lesson_type or '',
-                                        subgroup=subgroup or 0,
-                                        date=date,
-                                        time_start=time_start or '',
-                                        time_end=time_end or '',
-                                        weekday=weekday or 0,
-                                        teacher_name=teacher_name,
-                                        auditory=auditory
-                                    )
-
-                                    db.session.add(new_item)
-                                    imported_count += 1
-                                except Exception as e:
-                                    failed_count += 1
-                                    print(f"Ошибка импорта занятия: {str(e)}")
-                                    continue
             except Exception as e:
-                print(f"Ошибка обработки файла {file.filename}: {str(e)}")
+                # Сохраняем ошибку обработки файла
+                problem_lessons.append({
+                    'file': file.filename,
+                    'error': f"Ошибка обработки файла: {str(e)}",
+                    'is_file_error': True
+                })
                 continue
 
-        # Сохраняем изменения
+        # Сохраняем изменения в БД
         db.session.commit()
+
+        # Сохраняем проблемные пары в файл или базу данных
+        if problem_lessons:
+            # Вариант 1: Сохранение в файл
+            try:
+                with open('problem_lessons.json', 'w', encoding='utf-8') as f:
+                    json.dump(problem_lessons, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"Ошибка при сохранении проблемных пар в файл: {str(e)}")
+
+            # Вариант 2: Сохранение в базу данных
+            # Здесь можно добавить код для сохранения в БД, если нужно
 
         return jsonify({
             'message': f'Импорт завершен. Добавлено: {imported_count}, не удалось импортировать: {failed_count} занятий.',
             'imported_count': imported_count,
             'updated_count': updated_count,
             'failed_count': failed_count,
-            'processed_groups': len(processed_groups)
+            'processed_groups': len(processed_groups),
+            'problem_lessons': problem_lessons,  # Возвращаем список проблемных пар
+            'problem_lessons_count': len(problem_lessons)
         }), 200
 
     except Exception as e:
+        db.session.rollback()
         return jsonify({'message': f'Ошибка при импорте расписания: {str(e)}'}), 500
 
 
@@ -2627,7 +2776,160 @@ def delete_user(current_user, id):
     return jsonify({'message': 'Пользователь успешно удален!'}), 200
 
 
+@app.route('/api/lesson_types', methods=['GET'])
+@token_required
+def get_lesson_types(current_user):
+    lesson_types = LessonType.query.all()
+    return jsonify([lesson_type.to_dict() for lesson_type in lesson_types]), 200
 
+
+# Create a new lesson type
+@app.route('/api/lesson_types', methods=['POST'])
+@token_required
+@admin_required
+def create_lesson_type(current_user):
+    data = request.get_json()
+
+    # Validate required fields
+    if 'type_name' not in data or not data['type_name']:
+        return jsonify({'message': 'Название типа занятия обязательно!'}), 400
+
+    if 'db_values' not in data or not data['db_values'] or len(data['db_values']) == 0:
+        return jsonify({'message': 'Хотя бы одно обозначение в БД обязательно!'}), 400
+
+    # Create a new lesson type
+    new_lesson_type = LessonType(
+        type_name=data['type_name'],
+        db_values=json.dumps(data['db_values']),  # Store as JSON string
+        full_name=data.get('full_name', ''),
+        hours_multiplier=data.get('hours_multiplier', 2),
+        color=data.get('color', '#E9F0FC')
+    )
+
+    db.session.add(new_lesson_type)
+    db.session.commit()
+
+    return jsonify(new_lesson_type.to_dict()), 201
+
+
+# Update a lesson type
+@app.route('/api/lesson_types/<int:id>', methods=['PUT'])
+@token_required
+@admin_required
+def update_lesson_type(current_user, id):
+    lesson_type = LessonType.query.get_or_404(id)
+    data = request.get_json()
+
+    # Validate required fields
+    if 'type_name' in data and not data['type_name']:
+        return jsonify({'message': 'Название типа занятия обязательно!'}), 400
+
+    if 'db_values' in data and (not data['db_values'] or len(data['db_values']) == 0):
+        return jsonify({'message': 'Хотя бы одно обозначение в БД обязательно!'}), 400
+
+    # Update fields
+    if 'type_name' in data:
+        lesson_type.type_name = data['type_name']
+    if 'db_values' in data:
+        lesson_type.db_values = json.dumps(data['db_values'])
+    if 'full_name' in data:
+        lesson_type.full_name = data['full_name']
+    if 'hours_multiplier' in data:
+        lesson_type.hours_multiplier = data['hours_multiplier']
+    if 'color' in data:
+        lesson_type.color = data['color']
+
+    lesson_type.updated_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify(lesson_type.to_dict()), 200
+
+
+# Delete a lesson type
+@app.route('/api/lesson_types/<int:id>', methods=['DELETE'])
+@token_required
+@admin_required
+def delete_lesson_type(current_user, id):
+    lesson_type = LessonType.query.get_or_404(id)
+
+    db.session.delete(lesson_type)
+    db.session.commit()
+
+    return jsonify({'message': 'Тип занятия успешно удален!'}), 200
+
+
+# Export lesson types to JSON
+@app.route('/api/lesson_types/export', methods=['GET'])
+@token_required
+@admin_required
+def export_lesson_types(current_user):
+    lesson_types = LessonType.query.all()
+    lesson_types_data = [lesson_type.to_dict() for lesson_type in lesson_types]
+
+    return jsonify(lesson_types_data), 200
+
+
+# Import lesson types from JSON
+@app.route('/api/lesson_types/import', methods=['POST'])
+@token_required
+@admin_required
+def import_lesson_types(current_user):
+    if 'file' not in request.files:
+        return jsonify({'message': 'Файл отсутствует!'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'message': 'Файл не выбран!'}), 400
+
+    try:
+        data = json.loads(file.read().decode('utf-8'))
+
+        # Validate data structure
+        if not isinstance(data, list):
+            return jsonify({'message': 'Неверный формат данных!'}), 400
+
+        # Clear existing lesson types if requested
+        clear_existing = request.form.get('clear_existing') == 'true'
+        if clear_existing:
+            LessonType.query.delete()
+
+        # Import lesson types
+        imported_count = 0
+        for item in data:
+            if 'type_name' not in item or 'db_values' not in item:
+                continue
+
+            # Check if the lesson type already exists
+            existing = LessonType.query.filter_by(type_name=item['type_name']).first()
+            if existing and not clear_existing:
+                # Update existing
+                existing.db_values = json.dumps(item['db_values'])
+                existing.full_name = item.get('full_name', '')
+                existing.hours_multiplier = item.get('hours_multiplier', 2)
+                existing.color = item.get('color', '#E9F0FC')
+                existing.updated_at = datetime.utcnow()
+            else:
+                # Create new
+                new_lesson_type = LessonType(
+                    type_name=item['type_name'],
+                    db_values=json.dumps(item['db_values']),
+                    full_name=item.get('full_name', ''),
+                    hours_multiplier=item.get('hours_multiplier', 2),
+                    color=item.get('color', '#E9F0FC')
+                )
+                db.session.add(new_lesson_type)
+
+            imported_count += 1
+
+        db.session.commit()
+
+        return jsonify({
+            'message': f'Успешно импортировано {imported_count} типов занятий!',
+            'imported_count': imported_count
+        }), 200
+
+    except Exception as e:
+        return jsonify({'message': f'Ошибка при импорте: {str(e)}'}), 500
 
 
 # Создаем функцию для инициализации базы данных

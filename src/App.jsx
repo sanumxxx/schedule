@@ -15,6 +15,7 @@ import ScheduleEditor from './components/admin/ScheduleEditor';
 import ScheduleImport from './components/admin/ScheduleImport';
 import UserManagement from './components/admin/UserManagement';
 import TimeSlotManager from './components/admin/TimeSlotManager';
+import LessonTypeSettings from './components/admin/LessonTypeSettings';
 
 // Global styles
 const GlobalStyle = createGlobalStyle`
@@ -55,8 +56,16 @@ function App() {
           <Route path="/schedule/:type/:id/:semester/:week" element={<SchedulePage />} />
           <Route path="/login" element={<LoginPage />} />
 
-          {/* Admin routes - with trailing asterisk for nested routes */}
-          <Route path="/admin/*" element={<AdminPage />} />
+          {/* Admin routes with nested routes */}
+          <Route path="/admin/*" element={<AdminPage />}>
+            {/* These routes are handled inside AdminPage component */}
+            <Route path="editor" element={<ScheduleEditor />} />
+            <Route path="import" element={<ScheduleImport />} />
+            <Route path="users" element={<UserManagement />} />
+            <Route path="time_slots" element={<TimeSlotManager />} />
+            <Route path="lesson_types" element={<LessonTypeSettings />} />
+            <Route path="settings" element={<div>Страница настроек (в разработке)</div>} />
+          </Route>
 
           {/* Reports routes */}
           <Route path="/reports" element={<ReportsListPage />} />
@@ -70,4 +79,4 @@ function App() {
   );
 }
 
-export default App;
+export default App;   

@@ -366,4 +366,37 @@ export const timeSlotsApi = {
     }
 };
 
+export const lessonTypesApi = {
+  getLessonTypes: () => {
+    return api.get('/lesson_types');
+  },
+
+  createLessonType: (data) => {
+    return api.post('/lesson_types', data);
+  },
+
+  updateLessonType: (id, data) => {
+    return api.put(`/lesson_types/${id}`, data);
+  },
+
+  deleteLessonType: (id) => {
+    return api.delete(`/lesson_types/${id}`);
+  },
+
+  // Import and export lesson type settings
+  exportLessonTypes: () => {
+    return api.get('/lesson_types/export', {
+      responseType: 'blob'
+    });
+  },
+
+  importLessonTypes: (formData) => {
+    return api.post('/lesson_types/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  }
+};
+
 export default api;
